@@ -1,0 +1,32 @@
+[
+  {
+    "id": "TM-001",
+    "name": "Alex Rivera",
+    "role": "Senior Support Engineer",
+    "email": "alex.rivera@company.com"
+  },
+  {
+    "id": "TM-002",
+    "name": "Sarah Chen",
+    "role": "Network Specialist",
+    "email": "sarah.chen@company.com"
+  },
+  {
+    "id": "TM-003",
+    "name": "Marcus Johnson",
+    "role": "Security Analyst",
+    "email": "marcus.johnson@company.com"
+  },
+  {
+    "id": "TM-004",
+    "name": "Elena Rodriguez",
+    "role": "Cloud Architect",
+    "email": "elena.rodriguez@company.com"
+  },
+  {
+    "id": "TM-005",
+    "name": "David Kim",
+    "role": "Junior IT Associate",
+    "email": "david.kim@company.com"
+  }
+]

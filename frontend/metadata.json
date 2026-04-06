@@ -1,0 +1,5 @@
+{
+  "name": "IT Incident Tracker",
+  "description": "A dashboard for monitoring and managing IT incidents with real-time status tracking and priority visualization.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "INC-001",
+    "description": "Network connectivity issues in the main office",
+    "priority": "High",
+    "status": "Open",
+    "createdAt": "2024-03-20T08:30:00Z"
+  },
+  {
+    "id": "INC-002",
+    "description": "Email server latency reported by multiple users",
+    "priority": "Medium",
+    "status": "Assigned",
+    "assignedTo": "Sarah Chen",
+    "createdAt": "2024-03-20T09:15:00Z"
+  },
+  {
+    "id": "INC-003",
+    "description": "Printer on 3rd floor not responding to print jobs",
+    "priority": "Low",
+    "status": "Resolved",
+    "createdAt": "2024-03-19T14:20:00Z"
+  },
+  {
+    "id": "INC-004",
+    "description": "VPN access failing for remote employees in EMEA",
+    "priority": "Critical",
+    "status": "Classified",
+    "category": "Network",
+    "createdAt": "2024-03-20T10:05:00Z"
+  },
+  {
+    "id": "INC-005",
+    "description": "Software update required for HR portal",
+    "priority": "Low",
+    "status": "Open",
+    "createdAt": "2024-03-20T11:45:00Z"
+  },
+  {
+    "id": "INC-006",
+    "description": "Database backup failure notification",
+    "priority": "High",
+    "status": "Assigned",
+    "assignedTo": "Alex Rivera",
+    "createdAt": "2024-03-20T12:30:00Z"
+  },
+  {
+    "id": "INC-007",
+    "description": "New workstation setup for finance department",
+    "priority": "Medium",
+    "status": "Resolved",
+    "createdAt": "2024-03-18T09:00:00Z"
+  },
+  {
+    "id": "INC-008",
+    "description": "Security patch deployment for web servers",
+    "priority": "Critical",
+    "status": "Classified",
+    "category": "Infrastructure",
+    "createdAt": "2024-03-20T13:15:00Z"
+  }
+]
