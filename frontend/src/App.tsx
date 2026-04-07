@@ -172,14 +172,62 @@ export default function App() {
   const fetchIncidents = async () => {
     setIsLoading(true);
     setError(null);
-    await new Promise(resolve => setTimeout(resolve, 1000));
     try {
-      if (Math.random() < 0.02) throw new Error('Failed to connect to the incident management server.');
-      setIncidents(incidentsData as Incident[]);
+      const response = await fetch('/api/incidents');
+      if (!response.ok) throw new Error('Failed to connect to the incident management server.');
+      
+      const rawData = await response.json();
+      
+      const mappedData: Incident[] = rawData.map((item: any) => ({
+        id: item.id,
+        description: item.description,
+        priority: 'Medium',
+        status: item.status,
+        category: item.category,
+        assignedTo: item.assignment_group || item.assignedTo,
+        createdAt: new Date().toISOString(),
+      }));
+
+      setIncidents(mappedData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleClassifyClick = async (incident: Incident) => {
+    setHistory(prev => [{
+      id: Math.random().toString(36).substr(2, 9),
+      message: `Sending ${incident.id} to Gemini for classification...`,
+      timestamp: new Date()
+    }, ...prev].slice(0, 50));
+
+    try {
+       const res = await fetch(`/api/incidents/${incident.id}/classify`, {method: 'POST'});
+       if(res.ok) {
+           const result = await res.json();
+           setIncidents(prev => prev.map(i => i.id === incident.id ? {
+               ...i,
+               status: 'Assigned',
+               category: result.category,
+               assignedTo: result.assignment_group
+           } : i));
+           setHistory(prev => [{
+               id: Math.random().toString(36).substr(2, 9),
+               message: `Incident ${incident.id} classified as ${result.category} and assigned to ${result.assignment_group}`,
+               timestamp: new Date()
+           }, ...prev].slice(0, 50));
+       } else {
+           throw new Error("API responded with an error");
+       }
+    } catch(err) {
+       console.error("Classification failed", err);
+       setHistory(prev => [{
+           id: Math.random().toString(36).substr(2, 9),
+           message: `Failed to classify ${incident.id}.`,
+           timestamp: new Date()
+       }, ...prev].slice(0, 50));
     }
   };
 
@@ -387,6 +435,22 @@ export default function App() {
                         />
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={async () => {
+                            setIsLoading(true);
+                            try {
+                              await fetch('/api/incidents/sync', {method: 'POST'});
+                              await fetchIncidents();
+                            } catch(e: any) {
+                              setError("Sync failed: " + e.message);
+                              setIsLoading(false);
+                            }
+                          }}
+                          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all border bg-slate-900 text-white hover:bg-slate-800`}
+                        >
+                          <RefreshCcw className="w-4 h-4 inline mr-1" />
+                          Sync from ServiceNow
+                        </button>
                         {['All', 'Open', 'Assigned', 'Resolved', 'Classified'].map((status) => (
                           <button
                             key={status}
@@ -411,7 +475,7 @@ export default function App() {
                             key={incident.id} 
                             incident={incident} 
                             onAssignClick={setAssigningIncident}
-                            onClassifyClick={setClassifyingIncident}
+                            onClassifyClick={handleClassifyClick}
                           />
                         ))}
                       </AnimatePresence>
