@@ -50,20 +50,18 @@ def _run_gemini(prompt: str) -> dict:
 
 
 def classify_incident_basic(description: str) -> dict:
-    """Uses Gemini LLM to classify category, subcategory, and priority."""
+    """Uses Gemini LLM to classify category and subcategory."""
     prompt = f"""
 You are an ITSM incident classification assistant.
 
 Classify the incident based on its description into:
 1. Category (e.g., Network, Application, Infrastructure, Hardware)
 2. Subcategory (e.g., VPN, Database, Server, Frontend, ERP)
-3. Priority (Low, Medium, High, Critical)
 
 Return ONLY valid JSON in this exact format:
 {{
   "category": "Application",
-  "subcategory": "Database",
-  "priority": "High"
+  "subcategory": "Database"
 }}
 
 Incident description:

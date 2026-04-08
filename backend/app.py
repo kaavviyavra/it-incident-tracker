@@ -52,6 +52,35 @@ def update_snow_work_notes(sys_id, work_notes):
     except:
         pass
 
+# --- Priority Calculation ---
+def calculate_priority(impact, urgency):
+    """
+    Deterministically calculates priority based on Impact and Urgency.
+    Default to '3 - Moderate' if inputs are missing or invalid.
+    """
+    # Mapping based on user requirement
+    matrix = {
+        ("1 - High", "1 - High"): "1 - Critical",
+        ("1 - High", "2 - Medium"): "2 - High",
+        ("1 - High", "3 - Low"): "3 - Moderate",
+        ("2 - Medium", "1 - High"): "2 - High",
+        ("2 - Medium", "2 - Medium"): "3 - Moderate",
+        ("2 - Medium", "3 - Low"): "4 - Low",
+        ("3 - Low", "1 - High"): "3 - Moderate",
+        ("3 - Low", "2 - Medium"): "4 - Low",
+        ("3 - Low", "3 - Low"): "5 - Planning",
+    }
+    return matrix.get((impact, urgency), "3 - Moderate")
+
+def map_snow_to_standard(val):
+    """Maps SNOW numeric values to the standard 'N - Label' format."""
+    mapping = {
+        "1": "1 - High",
+        "2": "2 - Medium",
+        "3": "3 - Low"
+    }
+    return mapping.get(str(val), "3 - Low")
+
 # --- API Endpoints ---
 @app.route("/incidents", methods=["GET"])
 def get_incidents():
@@ -77,13 +106,19 @@ def get_incidents():
         # prevent 'None' appearing
         full_description = f"{short_desc}\n\n{long_desc}".strip()
         
+        impact = map_snow_to_standard(inc.get("impact"))
+        urgency = map_snow_to_standard(inc.get("urgency"))
+        priority = calculate_priority(impact, urgency)
+
         incident = {
             "id": inc_id,
             "sys_id": inc.get("sys_id"),
             "description": full_description,
             "category": "Unassigned",
             "subcategory": "Unassigned",
-            "priority": "Medium",
+            "impact": impact,
+            "urgency": urgency,
+            "priority": priority,
             "assignment_group": "Unassigned",
             "assigned_to": "Unassigned",
             "status": "Open",
@@ -105,7 +140,8 @@ def classify_incident(incident_id):
         result = classify_incident_basic(incident["description"])
         incident["category"] = result.get("category", "Unknown")
         incident["subcategory"] = result.get("subcategory", "Unknown")
-        incident["priority"] = result.get("priority", "Medium")
+        # Priority is now calculated deterministically, ignoring LLM suggestion
+        incident["priority"] = calculate_priority(incident.get("impact"), incident.get("urgency"))
         incident["status"] = "Classified"
         incident["history"].append(f"Classified: {incident['category']} / {incident['subcategory']}")
         return jsonify(incident)
