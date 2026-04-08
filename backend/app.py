@@ -6,155 +6,187 @@ from flask import Flask, jsonify
 from requests.auth import HTTPBasicAuth
 
 from store import incidents
-from llm_client import classify_with_gemini
+from llm_client import classify_incident_basic, assign_incident_with_context
 
-# Load environment variables
 load_dotenv()
-
 app = Flask(__name__)
 
-
-def fetch_servicenow_incidents(limit=5):
-    """Fetch active incidents directly from ServiceNow."""
+# --- ServiceNow Fetchers ---
+def get_snow_auth():
     snow_url = os.getenv("SNOW_INSTANCE_URL")
     snow_user = os.getenv("SNOW_USERNAME")
     snow_pwd = os.getenv("SNOW_PASSWORD")
-
     if not all([snow_url, snow_user, snow_pwd]):
         raise ValueError("ServiceNow credentials are not configured in the .env file.")
+    return snow_url, HTTPBasicAuth(snow_user, snow_pwd)
 
-    api_url = (
-        f"{snow_url}/api/now/table/incident"
-        f"?sysparm_query=active=true"
-        f"&sysparm_limit={limit}"
-    )
-
-    response = requests.get(
-        api_url,
-        auth=HTTPBasicAuth(snow_user, snow_pwd),
-        headers={"Accept": "application/json"},
-        verify=False  # DEV only
-    )
-    
-    # Check if ServiceNow returned an HTML hibernation page instead of JSON
-    if "application/json" not in response.headers.get("Content-Type", ""):
-        if "Hibernating" in response.text:
-            raise ValueError("Your ServiceNow Developer Instance is currently Hibernating! Please log in to developer.servicenow.com to wake it up.")
-        raise ValueError("ServiceNow returned an invalid non-JSON response. Check your instance URL.")
-
+def fetch_servicenow_incidents(limit=10):
+    snow_url = os.getenv("SNOW_INSTANCE_URL")
+    snow_user = os.getenv("SNOW_USERNAME")
+    snow_pwd = os.getenv("SNOW_PASSWORD")
+    url, auth = get_snow_auth()
+    api_url = f"{snow_url}/api/now/table/incident?sysparm_query=active=true^opened_by=javascript:gs.getUserID()^ORDERBYDESCsys_created_on"
+    response = requests.get(api_url, auth=auth, headers={"Accept": "application/json"}, verify=False)
     response.raise_for_status()
     return response.json().get("result", [])
 
+def fetch_servicenow_groups(limit=15):
+    url, auth = get_snow_auth()
+    api_url = f"{url}/api/now/table/sys_user_group?sysparm_query=active=true&sysparm_limit={limit}"
+    response = requests.get(api_url, auth=auth, headers={"Accept": "application/json"}, verify=False)
+    response.raise_for_status()
+    return response.json().get("result", [])
 
+def fetch_servicenow_users(limit=50):
+    url, auth = get_snow_auth()
+    api_url = f"{url}/api/now/table/sys_user?sysparm_query=active=true^emailISNOTEMPTY&sysparm_limit={limit}"
+    response = requests.get(api_url, auth=auth, headers={"Accept": "application/json"}, verify=False)
+    response.raise_for_status()
+    return response.json().get("result", [])
+
+def update_snow_work_notes(sys_id, work_notes):
+    url, auth = get_snow_auth()
+    api_url = f"{url}/api/now/table/incident/{sys_id}"
+    try:
+        requests.patch(api_url, auth=auth, json={"work_notes": work_notes}, headers={"Accept": "application/json"}, verify=False)
+    except:
+        pass
+
+# --- API Endpoints ---
 @app.route("/incidents", methods=["GET"])
 def get_incidents():
-    """List incidents currently in the local cache."""
-    return jsonify(list(incidents.values()))
-
-
-@app.route("/incidents/sync", methods=["POST"])
-def sync_and_classify():
-    """
-    Fetch live ServiceNow incidents and classify them using Gemini.
-    """
+    """Fetch raw incidents and display them. Do not auto-classify."""
     try:
-        snow_incidents = fetch_servicenow_incidents(limit=3)
-    except ValueError as e:
+        snow_incidents = fetch_servicenow_incidents()
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": "Failed to connect to ServiceNow", "details": str(e)}), 502
 
-    processed = []
-
+    processed_incidents = []
+    
     for inc in snow_incidents:
         inc_id = inc.get("number")
-        short_desc = inc.get("short_description")
-        long_desc = inc.get("description")
+        if not inc_id: continue
         
-        # Ensure we don't concatenate None types
-        short_desc = short_desc if short_desc else ""
-        long_desc = long_desc if long_desc else ""
-        
-        full_description = f"{short_desc}\n\n{long_desc}".strip()
-
-        if not inc_id:
+        # Keep existing cached version if we have it
+        if inc_id in incidents:
+            processed_incidents.append(incidents[inc_id])
             continue
-
-        try:
-            time.sleep(4)  # Rate limit protection
-            result = classify_with_gemini(full_description)
-            category = result["category"]
-            assignment_group = result["assignment_group"]
-            source = "Gemini"
-        except Exception as e:
-            category = "Unassigned"
-            assignment_group = "Unassigned"
-            source = "Failed to classify (LLM Error)"
-
-        incidents[inc_id] = {
+            
+        short_desc = inc.get("short_description", "") or ""
+        long_desc = inc.get("description", "") or ""
+        # prevent 'None' appearing
+        full_description = f"{short_desc}\n\n{long_desc}".strip()
+        
+        incident = {
             "id": inc_id,
+            "sys_id": inc.get("sys_id"),
             "description": full_description,
-            "category": category,
-            "assignment_group": assignment_group,
-            "status": "Assigned",
-            "history": [
-                f"Fetched from ServiceNow",
-                f"Classified by {source}: {category} / {assignment_group}"
-            ]
+            "category": "Unassigned",
+            "subcategory": "Unassigned",
+            "priority": "Medium",
+            "assignment_group": "Unassigned",
+            "assigned_to": "Unassigned",
+            "status": "Open",
+            "history": ["Fetched from ServiceNow"]
         }
-
-        processed.append(incidents[inc_id])
-
-    return jsonify({
-        "message": f"Processed {len(processed)} ServiceNow incidents",
-        "incidents": processed
-    })
+        incidents[inc_id] = incident
+        processed_incidents.append(incident)
+        
+    return jsonify(processed_incidents)
 
 
 @app.route("/incidents/<incident_id>/classify", methods=["POST"])
 def classify_incident(incident_id):
     incident = incidents.get(incident_id)
-
     if not incident:
         return jsonify({"error": "Incident not found"}), 404
 
     try:
-        result = classify_with_gemini(incident["description"])
+        result = classify_incident_basic(incident["description"])
+        incident["category"] = result.get("category", "Unknown")
+        incident["subcategory"] = result.get("subcategory", "Unknown")
+        incident["priority"] = result.get("priority", "Medium")
+        incident["status"] = "Classified"
+        incident["history"].append(f"Classified: {incident['category']} / {incident['subcategory']}")
+        return jsonify(incident)
     except Exception as e:
-        return jsonify({
-            "error": "LLM classification failed",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": str(e)}), 500
 
-    incident["category"] = result["category"]
-    incident["assignment_group"] = result["assignment_group"]
-    incident["status"] = "Assigned"
 
-    incident["history"].append(
-        f"Gemini classified as {incident['category']} "
-        f"and assigned to {incident['assignment_group']}"
-    )
+@app.route("/incidents/<incident_id>/assign", methods=["POST"])
+def assign_incident(incident_id):
+    incident = incidents.get(incident_id)
+    if not incident:
+        return jsonify({"error": "Incident not found"}), 404
 
+    try:
+        # 1. Fetch live contexts
+        groups_raw = fetch_servicenow_groups(limit=20)
+        users_raw = fetch_servicenow_users(limit=50)
+        
+        group_names = [g.get("name") for g in groups_raw if g.get("name")]
+        user_info = [f'{u.get("name", "")} ({u.get("title", "IT")})' for u in users_raw]
+        
+        # 2. Run Gemini
+        result = assign_incident_with_context(
+            incident["description"], 
+            incident["category"], 
+            group_names, 
+            user_info
+        )
+        
+        incident["assignment_group"] = result.get("assignment_group", "Unknown")
+        incident["assigned_to"] = result.get("assigned_to", "Unknown")
+        incident["status"] = "Assigned"
+        log_msg = f"Assigned to {incident['assignment_group']} -> {incident['assigned_to']}"
+        incident["history"].append(log_msg)
+        
+        # 3. Patch SNOW work notes
+        work_notes = (
+            f"--- AI Assignment & Classification ---\n"
+            f"Category: {incident['category']}\n"
+            f"Subcategory: {incident['subcategory']}\n"
+            f"Assignment Group: {incident['assignment_group']}\n"
+            f"Assigned To: {incident['assigned_to']}\n"
+        )
+        update_snow_work_notes(incident.get("sys_id"), work_notes)
+
+        return jsonify(incident)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/incidents/<incident_id>/resolve", methods=["POST"])
+def resolve_incident(incident_id):
+    incident = incidents.get(incident_id)
+    if not incident:
+        return jsonify({"error": "Incident not found"}), 404
+
+    incident["status"] = "Resolved"
+    incident["history"].append("Marked as Resolved via UI.")
+    update_snow_work_notes(incident.get("sys_id"), "Incident manually marked as Resolved via Incident Tracker.")
+    
     return jsonify(incident)
 
 
-@app.route("/incidents/<incident_id>/heal", methods=["POST"])
-def auto_heal(incident_id):
-    if incident_id not in incidents:
-        return jsonify({"error": "Incident not yet processed"}), 404
-
-    incidents[incident_id]["status"] = "Resolved"
-    incidents[incident_id]["history"].append("Auto-healing simulated: Issue resolved")
-
-    return jsonify(incidents[incident_id])
-
-
-@app.route("/incidents/<incident_id>/history", methods=["GET"])
-def incident_history(incident_id):
-    if incident_id not in incidents:
-        return jsonify({"error": "Incident not found"}), 404
-
-    return jsonify(incidents[incident_id])
+@app.route("/team", methods=["GET"])
+def get_team():
+    try:
+        users = fetch_servicenow_users(limit=50)
+        team = []
+        for u in users:
+            role = u.get("title")
+            if not role: role = "IT Professional"
+            email = u.get("email", "")
+            team.append({
+                "id": u.get("sys_id"),
+                "name": u.get("name"),
+                "role": role,
+                "email": email
+            })
+        return jsonify(team)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

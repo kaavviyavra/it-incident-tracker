@@ -4,17 +4,14 @@ import {
   CheckCircle2, 
   Clock, 
   ShieldAlert, 
-  Filter, 
   Search,
   LayoutDashboard,
   Activity,
   UserPlus,
-  Loader2,
   AlertTriangle,
   RefreshCcw,
   Calendar,
   Hash,
-  ArrowRight,
   User,
   HelpCircle,
   Users,
@@ -28,8 +25,6 @@ import {
   Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import incidentsData from './data/incidents.json';
-import teamData from './data/team.json';
 import { Incident, Priority, Status, TeamMember, Category } from './types';
 
 type View = 'dashboard' | 'profile' | 'help' | 'team';
@@ -58,15 +53,16 @@ const StatusBadge = ({ status }: { status: Status }) => {
 };
 
 const PriorityBadge = ({ priority }: { priority: Priority }) => {
-  const styles = {
-    Low: 'bg-slate-100 text-slate-600 border-slate-200',
-    Medium: 'bg-blue-50 text-blue-600 border-blue-200',
-    High: 'bg-orange-50 text-orange-600 border-orange-200',
-    Critical: 'bg-red-50 text-red-600 border-red-200 font-bold',
-  };
+  let style = 'bg-slate-100 text-slate-600 border-slate-200';
+  if (typeof priority === 'string') {
+    const p = priority.toLowerCase();
+    if (p.includes('critical')) style = 'bg-red-50 text-red-600 border-red-200 font-bold';
+    else if (p.includes('high')) style = 'bg-orange-50 text-orange-600 border-orange-200';
+    else if (p.includes('medium')) style = 'bg-blue-50 text-blue-600 border-blue-200';
+  }
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase tracking-wider border font-bold ${styles[priority]}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase tracking-wider border font-bold ${style}`}>
       {priority}
     </span>
   );
@@ -75,11 +71,12 @@ const PriorityBadge = ({ priority }: { priority: Priority }) => {
 interface IncidentCardProps {
   key?: string | number;
   incident: Incident;
-  onAssignClick: (incident: Incident) => void;
   onClassifyClick: (incident: Incident) => void;
+  onAssignClick: (incident: Incident) => void;
+  onResolveClick: (incident: Incident) => void;
 }
 
-const IncidentCard = ({ incident, onAssignClick, onClassifyClick }: IncidentCardProps) => {
+const IncidentCard = ({ incident, onClassifyClick, onAssignClick, onResolveClick }: IncidentCardProps) => {
   return (
     <motion.div 
       layout
@@ -105,17 +102,17 @@ const IncidentCard = ({ incident, onAssignClick, onClassifyClick }: IncidentCard
 
         <div className="flex flex-wrap gap-3 items-center mt-auto">
           <StatusBadge status={incident.status} />
-          {incident.category && (
+          {incident.category && incident.category !== "Unassigned" && (
             <div className="flex items-center gap-1.5 text-xs text-yellow-700 font-bold bg-yellow-50 px-2 py-1 rounded-md border border-yellow-100">
               <Tag className="w-3.5 h-3.5" />
-              {incident.category}
+              {incident.category}{incident.subcategory && incident.subcategory !== "Unassigned" ? ` / ${incident.subcategory}` : ''}
             </div>
           )}
           <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
             <Calendar className="w-3.5 h-3.5" />
             {new Date(incident.createdAt).toLocaleDateString()}
           </div>
-          {incident.assignedTo && (
+          {incident.assignedTo && incident.assignedTo !== "Unassigned" && (
             <div className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-1 rounded-md">
               <User className="w-3.5 h-3.5" />
               {incident.assignedTo}
@@ -125,7 +122,7 @@ const IncidentCard = ({ incident, onAssignClick, onClassifyClick }: IncidentCard
       </div>
 
       <div className="px-5 py-4 bg-slate-50/50 border-t border-slate-100 rounded-b-2xl flex items-center justify-between">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           {incident.status === 'Open' && (
             <button 
               onClick={() => onClassifyClick(incident)}
@@ -135,13 +132,22 @@ const IncidentCard = ({ incident, onAssignClick, onClassifyClick }: IncidentCard
               Classify
             </button>
           )}
-          {(incident.status === 'Open' || incident.status === 'Classified') && (
+          {incident.status === 'Classified' && (
             <button 
               onClick={() => onAssignClick(incident)}
               className="px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 rounded-lg transition-all flex items-center gap-1.5"
             >
               <UserPlus className="w-3.5 h-3.5" />
               Assign
+            </button>
+          )}
+          {incident.status === 'Assigned' && (
+            <button 
+              onClick={() => onResolveClick(incident)}
+              className="px-3 py-1.5 text-xs font-bold text-green-700 hover:bg-green-100 rounded-lg transition-all flex items-center gap-1.5"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Resolve
             </button>
           )}
           {incident.status === 'Resolved' && (
@@ -159,15 +165,10 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<Status | 'All'>('All');
   const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [teamMembers] = useState<TeamMember[]>(teamData as TeamMember[]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<{id: string, message: string, timestamp: Date}[]>([]);
-  
-  // State for assignment flows
-  const [assigningIncident, setAssigningIncident] = useState<Incident | null>(null);
-  const [assigningToMember, setAssigningToMember] = useState<TeamMember | null>(null);
-  const [classifyingIncident, setClassifyingIncident] = useState<Incident | null>(null);
 
   const fetchIncidents = async () => {
     setIsLoading(true);
@@ -181,10 +182,11 @@ export default function App() {
       const mappedData: Incident[] = rawData.map((item: any) => ({
         id: item.id,
         description: item.description,
-        priority: 'Medium',
+        priority: item.priority || 'Medium',
         status: item.status,
         category: item.category,
-        assignedTo: item.assignment_group || item.assignedTo,
+        subcategory: item.subcategory,
+        assignedTo: item.assigned_to || item.assignment_group,
         createdAt: new Date().toISOString(),
       }));
 
@@ -196,82 +198,88 @@ export default function App() {
     }
   };
 
-  const handleClassifyClick = async (incident: Incident) => {
+  const fetchTeam = async () => {
+    try {
+      const res = await fetch('/api/team');
+      if (res.ok) {
+        setTeamMembers(await res.json());
+      }
+    } catch (err) {
+      console.error("Failed to load team", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchIncidents();
+    fetchTeam();
+  }, []);
+
+  const addToHistory = (message: string) => {
     setHistory(prev => [{
-      id: Math.random().toString(36).substr(2, 9),
-      message: `Sending ${incident.id} to Gemini for classification...`,
+      id: Math.random().toString(36).substring(2, 9),
+      message,
       timestamp: new Date()
     }, ...prev].slice(0, 50));
-
+  };
+  
+  // API Flow Actions
+  const handleClassify = async (incident: Incident) => {
+    addToHistory(`Classifying ${incident.id} using Gemini...`);
     try {
        const res = await fetch(`/api/incidents/${incident.id}/classify`, {method: 'POST'});
        if(res.ok) {
            const result = await res.json();
            setIncidents(prev => prev.map(i => i.id === incident.id ? {
                ...i,
-               status: 'Assigned',
+               status: 'Classified',
                category: result.category,
-               assignedTo: result.assignment_group
+               subcategory: result.subcategory,
+               priority: result.priority
            } : i));
-           setHistory(prev => [{
-               id: Math.random().toString(36).substr(2, 9),
-               message: `Incident ${incident.id} classified as ${result.category} and assigned to ${result.assignment_group}`,
-               timestamp: new Date()
-           }, ...prev].slice(0, 50));
-       } else {
-           throw new Error("API responded with an error");
-       }
+           addToHistory(`${incident.id} classified as ${result.category}/${result.subcategory}`);
+       } else throw new Error("API responded with an error");
     } catch(err) {
-       console.error("Classification failed", err);
-       setHistory(prev => [{
-           id: Math.random().toString(36).substr(2, 9),
-           message: `Failed to classify ${incident.id}.`,
-           timestamp: new Date()
-       }, ...prev].slice(0, 50));
+       console.error(err);
+       addToHistory(`Classification failed for ${incident.id}.`);
     }
   };
 
-  useEffect(() => {
-    fetchIncidents();
-  }, []);
-
-  const handleStatusUpdate = (id: string, newStatus: Status) => {
-    setIncidents(prev => prev.map(incident => 
-      incident.id === id ? { ...incident, status: newStatus } : incident
-    ));
-    setHistory(prev => [{
-      id: Math.random().toString(36).substr(2, 9),
-      message: `Incident ${id} status updated to ${newStatus}`,
-      timestamp: new Date()
-    }, ...prev].slice(0, 50));
+  const handleAssign = async (incident: Incident) => {
+    addToHistory(`Determining best assignment for ${incident.id}...`);
+    try {
+       const res = await fetch(`/api/incidents/${incident.id}/assign`, {method: 'POST'});
+       if(res.ok) {
+           const result = await res.json();
+           setIncidents(prev => prev.map(i => i.id === incident.id ? {
+               ...i,
+               status: 'Assigned',
+               assignedTo: result.assigned_to !== 'Unknown' && result.assigned_to ? result.assigned_to : result.assignment_group
+           } : i));
+           addToHistory(`${incident.id} assigned to ${result.assignment_group} / ${result.assigned_to}`);
+       } else throw new Error("API responded with an error");
+    } catch(err) {
+       console.error(err);
+       addToHistory(`Assignment failed for ${incident.id}.`);
+    }
   };
 
-  const handleClassify = (id: string, category: Category) => {
-    setIncidents(prev => prev.map(incident => 
-      incident.id === id ? { ...incident, status: 'Classified', category } : incident
-    ));
-    setHistory(prev => [{
-      id: Math.random().toString(36).substr(2, 9),
-      message: `Incident ${id} classified as ${category}`,
-      timestamp: new Date()
-    }, ...prev].slice(0, 50));
-    setClassifyingIncident(null);
+  const handleResolve = async (incident: Incident) => {
+    addToHistory(`Marking ${incident.id} as resolved...`);
+    try {
+       const res = await fetch(`/api/incidents/${incident.id}/resolve`, {method: 'POST'});
+       if(res.ok) {
+           setIncidents(prev => prev.map(i => i.id === incident.id ? {
+               ...i,
+               status: 'Resolved'
+           } : i));
+           addToHistory(`${incident.id} successfully resolved.`);
+       } else throw new Error("API responded with an error");
+    } catch(err) {
+       console.error(err);
+       addToHistory(`Failed to resolve ${incident.id}.`);
+    }
   };
 
-  const handleAssign = (incidentId: string, memberName: string) => {
-    setIncidents(prev => prev.map(incident => 
-      incident.id === incidentId 
-        ? { ...incident, status: 'Assigned', assignedTo: memberName } 
-        : incident
-    ));
-    setHistory(prev => [{
-      id: Math.random().toString(36).substr(2, 9),
-      message: `Incident ${incidentId} assigned to ${memberName}`,
-      timestamp: new Date()
-    }, ...prev].slice(0, 50));
-    setAssigningIncident(null);
-    setAssigningToMember(null);
-  };
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter(incident => {
@@ -282,22 +290,18 @@ export default function App() {
     });
   }, [searchTerm, statusFilter, incidents]);
 
-  const unassignedClassifiedIncidents = useMemo(() => {
-    return incidents.filter(i => i.status === 'Classified' && !i.assignedTo);
-  }, [incidents]);
-
-  const stats = useMemo(() => {
+  let stats = useMemo(() => {
     return {
       total: incidents.length,
       open: incidents.filter(i => i.status === 'Open').length,
       resolved: incidents.filter(i => i.status === 'Resolved').length,
-      critical: incidents.filter(i => i.priority === 'Critical').length,
+      critical: incidents.filter(i => String(i.priority).toLowerCase().includes('critical')).length,
     };
   }, [incidents]);
 
   const sidebarItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'team', label: 'Team Members', icon: Users },
+    { id: 'team', label: 'Team Directory', icon: Users },
     { id: 'profile', label: 'My Profile', icon: User },
     { id: 'help', label: 'Help Center', icon: HelpCircle },
   ];
@@ -436,20 +440,11 @@ export default function App() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={async () => {
-                            setIsLoading(true);
-                            try {
-                              await fetch('/api/incidents/sync', {method: 'POST'});
-                              await fetchIncidents();
-                            } catch(e: any) {
-                              setError("Sync failed: " + e.message);
-                              setIsLoading(false);
-                            }
-                          }}
-                          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all border bg-slate-900 text-white hover:bg-slate-800`}
+                          onClick={fetchIncidents}
+                          className="px-4 py-2.5 rounded-xl text-xs font-bold transition-all border bg-slate-900 text-white hover:bg-slate-800"
                         >
                           <RefreshCcw className="w-4 h-4 inline mr-1" />
-                          Sync from ServiceNow
+                          Refresh Incidents
                         </button>
                         {['All', 'Open', 'Assigned', 'Resolved', 'Classified'].map((status) => (
                           <button
@@ -468,14 +463,15 @@ export default function App() {
                     </div>
 
                     {/* Incident Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xlg:grid-cols-3 gap-6 mb-12">
                       <AnimatePresence mode="popLayout">
                         {filteredIncidents.map((incident) => (
                           <IncidentCard 
                             key={incident.id} 
                             incident={incident} 
-                            onAssignClick={setAssigningIncident}
-                            onClassifyClick={handleClassifyClick}
+                            onClassifyClick={handleClassify}
+                            onAssignClick={handleAssign}
+                            onResolveClick={handleResolve}
                           />
                         ))}
                       </AnimatePresence>
@@ -525,32 +521,26 @@ export default function App() {
               >
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="p-8 border-b border-slate-100">
-                    <h3 className="text-2xl font-bold text-slate-900 mb-2">Team Directory</h3>
-                    <p className="text-slate-500 font-medium">Manage and assign tasks to available support engineers.</p>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">ServiceNow IT Directory</h3>
+                    <p className="text-slate-500 font-medium">Auto-synced snapshot of IT users from ServiceNow table sys_user.</p>
                   </div>
                   <div className="divide-y divide-slate-100">
                     {teamMembers.map((member) => (
                       <div key={member.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-indigo-600 font-bold text-lg">
-                            {member.name.split(' ').map(n => n[0]).join('')}
+                            {member.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
                           </div>
                           <div>
                             <h4 className="font-bold text-slate-900">{member.name}</h4>
-                            <p className="text-sm text-slate-500 font-medium">{member.role}</p>
+                            <p className="text-sm text-slate-500 font-medium line-clamp-1">{member.role}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-6">
                           <div className="hidden md:flex items-center gap-2 text-sm text-slate-400 font-medium">
                             <Mail className="w-4 h-4" />
-                            {member.email}
+                            {member.email || "No email"}
                           </div>
-                          <button 
-                            onClick={() => setAssigningToMember(member)}
-                            className="px-6 py-2.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700"
-                          >
-                            Assign
-                          </button>
                         </div>
                       </div>
                     ))}
@@ -619,26 +609,26 @@ export default function App() {
                     How to use IncidentControl
                   </h3>
                   <div className="space-y-6 text-slate-600 font-medium leading-relaxed">
-                    <p>Welcome to the IT Operations Dashboard. This platform is designed to streamline incident management and team collaboration.</p>
+                    <p>Welcome to the IT Operations Dashboard. This platform is designed to streamline incident management and team collaboration with AI automated routing.</p>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
                         <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
                           <ShieldAlert className="w-4 h-4 text-yellow-600" /> Classify
                         </h4>
-                        <p className="text-sm">Categorize new incidents to determine their scope and impact. This is the first step in the lifecycle.</p>
+                        <p className="text-sm">Click 'Classify' to use Gemini LLM to categorize new incidents to determine their scope and impact automatically based on the description.</p>
                       </div>
                       <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
                         <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
                           <UserPlus className="w-4 h-4 text-blue-600" /> Assign
                         </h4>
-                        <p className="text-sm">Delegate incidents to specific team members. You can select a member from the Team Directory.</p>
+                        <p className="text-sm">Click 'Assign' to pull live ServiceNow users/groups and have Gemini route the ticket accurately. The result is patched to ServiceNow work notes dynamically.</p>
                       </div>
                       <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
                         <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
-                          <Search className="w-4 h-4 text-indigo-600" /> Search & Filter
+                          <CheckCircle2 className="w-4 h-4 text-green-600" /> Resolve
                         </h4>
-                        <p className="text-sm">Use the global search and status filters to quickly locate specific incidents or priorities.</p>
+                        <p className="text-sm">Complete the UI lifecycle simulation by resolving the ticket and concluding the loop.</p>
                       </div>
                     </div>
                   </div>
@@ -658,155 +648,6 @@ export default function App() {
           </AnimatePresence>
         </div>
       </div>
-
-      {/* MODAL: Assigning Incident to a Member (From Dashboard) */}
-      <AnimatePresence>
-        {assigningIncident && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
-            >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">Assign Incident</h3>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{assigningIncident.id}</p>
-                </div>
-                <button onClick={() => setAssigningIncident(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X className="w-5 h-5 text-slate-400" /></button>
-              </div>
-              <div className="max-h-[60vh] overflow-y-auto p-2">
-                {teamMembers.map(member => (
-                  <button
-                    key={member.id}
-                    onClick={() => handleAssign(assigningIncident.id, member.name)}
-                    className="w-full p-4 flex items-center justify-between hover:bg-indigo-50 rounded-2xl transition-all group"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
-                        {member.name.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <div className="text-left">
-                        <h4 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{member.name}</h4>
-                        <p className="text-xs text-slate-500 font-medium">{member.role}</p>
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transition-all" />
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: Assigning a Member to an Incident (From Team View) */}
-      <AnimatePresence>
-        {assigningToMember && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
-            >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">Assign to {assigningToMember.name}</h3>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Select a Classified Incident</p>
-                </div>
-                <button onClick={() => setAssigningToMember(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X className="w-5 h-5 text-slate-400" /></button>
-              </div>
-              <div className="max-h-[60vh] overflow-y-auto p-2">
-                {unassignedClassifiedIncidents.length > 0 ? (
-                  unassignedClassifiedIncidents.map(incident => (
-                    <button
-                      key={incident.id}
-                      onClick={() => handleAssign(incident.id, assigningToMember.name)}
-                      className="w-full p-4 flex items-center justify-between hover:bg-indigo-50 rounded-2xl transition-all group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-yellow-100 flex items-center justify-center text-yellow-700 font-bold">
-                          <ShieldAlert className="w-5 h-5" />
-                        </div>
-                        <div className="text-left">
-                          <h4 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{incident.id}</h4>
-                          <p className="text-xs text-slate-500 font-medium line-clamp-1">{incident.description}</p>
-                        </div>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transition-all" />
-                    </button>
-                  ))
-                ) : (
-                  <div className="p-12 text-center text-slate-400">
-                    <ShieldAlert className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                    <p className="font-bold text-slate-900">No Classified Incidents</p>
-                    <p className="text-sm">There are no unassigned classified incidents available.</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: Classifying an Incident */}
-      <AnimatePresence>
-        {classifyingIncident && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
-            >
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">Classify Incident</h3>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{classifyingIncident.id}</p>
-                </div>
-                <button onClick={() => setClassifyingIncident(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X className="w-5 h-5 text-slate-400" /></button>
-              </div>
-              <div className="p-4 space-y-2">
-                {(['Network', 'Application', 'Infrastructure'] as Category[]).map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => handleClassify(classifyingIncident.id, cat)}
-                    className="w-full p-4 flex items-center justify-between hover:bg-yellow-50 rounded-2xl transition-all group border border-transparent hover:border-yellow-200"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-yellow-100 flex items-center justify-center text-yellow-700 font-bold">
-                        <Tag className="w-5 h-5" />
-                      </div>
-                      <div className="text-left">
-                        <h4 className="font-bold text-slate-900 group-hover:text-yellow-700 transition-colors">{cat}</h4>
-                        <p className="text-xs text-slate-500 font-medium">Assign to {cat} category</p>
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-yellow-700 transition-all" />
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

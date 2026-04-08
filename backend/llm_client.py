@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from dotenv import load_dotenv
 from google import genai
 
@@ -11,36 +12,7 @@ client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
-def classify_with_gemini(description: str) -> dict:
-    """
-    Uses Gemini LLM to classify an incident and assign a support group.
-    Returns structured JSON.
-    """
-
-    prompt = f"""
-You are an ITSM incident classification assistant.
-
-Classify the incident into one category:
-- Network
-- Application
-- Infrastructure
-
-Assign support groups:
-- Network → Network Team
-- Application → App Support Team
-- Infrastructure → Infra Team
-
-Return ONLY valid JSON in this format:
-{{
-  "category": "Application",
-  "assignment_group": "App Support Team"
-}}
-
-Incident description:
-\"\"\"{description}\"\"\"
-"""
-
-    # Try multiple models based on region/key availability
+def _run_gemini(prompt: str) -> dict:
     models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash-latest", "gemini-pro"]
     response = None
     last_error = None
@@ -52,19 +24,21 @@ Incident description:
                 contents=prompt
             )
             print(f"SUCCESS: Connected using model '{model_name}'!")
-            break # Success!
+            break
         except Exception as e:
+            error_str = str(e)
+            print(f"Model '{model_name}' failed: {error_str}")
             last_error = e
+            # Stop trying if we hit a Rate Limit (429) or API Key invalid (403), 
+            # since testing other models won't bypass a key-level block.
+            if "429" in error_str or "403" in error_str:
+                break
             continue
             
     if not response:
         raise ValueError(f"All Gemini models failed. Last error: {str(last_error)}")
 
-
-    import re
     text = response.text.strip()
-    
-    # Strip markdown block formatting if Gemini wraps the JSON response
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)
     text = text.strip()
@@ -73,3 +47,52 @@ Incident description:
         return json.loads(text)
     except json.JSONDecodeError:
         raise ValueError("Gemini returned invalid JSON")
+
+
+def classify_incident_basic(description: str) -> dict:
+    """Uses Gemini LLM to classify category, subcategory, and priority."""
+    prompt = f"""
+You are an ITSM incident classification assistant.
+
+Classify the incident based on its description into:
+1. Category (e.g., Network, Application, Infrastructure, Hardware)
+2. Subcategory (e.g., VPN, Database, Server, Frontend, ERP)
+3. Priority (Low, Medium, High, Critical)
+
+Return ONLY valid JSON in this exact format:
+{{
+  "category": "Application",
+  "subcategory": "Database",
+  "priority": "High"
+}}
+
+Incident description:
+\"\"\"{description}\"\"\"
+"""
+    return _run_gemini(prompt)
+
+
+def assign_incident_with_context(description: str, category: str, groups: list, users: list) -> dict:
+    """Uses Gemini to assign the ticket to an actual SNOW user & group."""
+    prompt = f"""
+You are an ITSM incident routing assistant.
+
+Given the Incident details, pick the MOST APPROPRIATE Assignment Group and Assigned To user from the provided lists ONLY. 
+Do NOT make up names that are not in the lists. You don't have to assign a user if uncertain, but do assign a group.
+
+Incident Category: {category}
+Incident Description: {description}
+
+Valid Assignment Groups to choose from:
+{groups}
+
+Valid Users to choose from (along with their ID/Roles):
+{users}
+
+Return ONLY valid JSON in this exact format:
+{{
+  "assignment_group": "[Chosen Group Name from the list]",
+  "assigned_to": "[Chosen User Name from the list or empty string]"
+}}
+"""
+    return _run_gemini(prompt)

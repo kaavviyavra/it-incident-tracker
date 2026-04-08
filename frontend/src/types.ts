@@ -1,6 +1,6 @@
-export type Priority = 'Low' | 'Medium' | 'High' | 'Critical';
+export type Priority = string;
 export type Status = 'Open' | 'Assigned' | 'Resolved' | 'Classified';
-export type Category = 'Network' | 'Application' | 'Infrastructure';
+export type Category = string;
 
 export interface Incident {
   id: string;
@@ -8,6 +8,7 @@ export interface Incident {
   priority: Priority;
   status: Status;
   category?: Category;
+  subcategory?: string;
   createdAt: string;
   assignedTo?: string;
 }
