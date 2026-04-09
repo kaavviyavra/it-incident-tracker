@@ -224,7 +224,7 @@ export default function App() {
   
   // API Flow Actions
   const handleClassify = async (incident: Incident) => {
-    addToHistory(`Classifying ${incident.id} using Gemini...`);
+    addToHistory(`Classifying ${incident.id}`);
     try {
        const res = await fetch(`/api/incidents/${incident.id}/classify`, {method: 'POST'});
        if(res.ok) {

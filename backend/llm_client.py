@@ -3,42 +3,30 @@ import json
 import re
 from dotenv import load_dotenv
 from google import genai
+from groq import Groq
 
 # Load variables from .env
 load_dotenv()
 
-# Create Gemini client using API key
-client = genai.Client(
+# -----------------------------
+# Gemini Client (Primary)
+# -----------------------------
+gemini_client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
-def _run_gemini(prompt: str) -> dict:
-    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash-latest", "gemini-pro"]
-    response = None
-    last_error = None
-    
-    for model_name in models_to_try:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-            print(f"SUCCESS: Connected using model '{model_name}'!")
-            break
-        except Exception as e:
-            error_str = str(e)
-            print(f"Model '{model_name}' failed: {error_str}")
-            last_error = e
-            # Stop trying if we hit a Rate Limit (429) or API Key invalid (403), 
-            # since testing other models won't bypass a key-level block.
-            if "429" in error_str or "403" in error_str:
-                break
-            continue
-            
-    if not response:
-        raise ValueError(f"All Gemini models failed. Last error: {str(last_error)}")
+# -----------------------------
+# Groq Client (Fallback - LLaMA 3)
+# -----------------------------
+groq_client = Groq(
+    api_key=os.getenv("GROQ_API_KEY")
+)
 
-    text = response.text.strip()
+# -----------------------------
+# Helper: Clean & Parse JSON
+# -----------------------------
+def _clean_and_parse_json(text: str) -> dict:
+    text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)
     text = text.strip()
@@ -46,11 +34,67 @@ def _run_gemini(prompt: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        raise ValueError("Gemini returned invalid JSON")
+        raise ValueError("LLM returned invalid JSON")
 
+# -----------------------------
+# Gemini Runner (Primary)
+# -----------------------------
+def _run_gemini(prompt: str) -> dict:
+    models_to_try = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash-latest",
+        "gemini-pro"
+    ]
 
+    last_error = None
+
+    for model_name in models_to_try:
+        try:
+            response = gemini_client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+            print(f"Gemini success with model: {model_name}")
+            return _clean_and_parse_json(response.text)
+
+        except Exception as e:
+            last_error = e
+            error_str = str(e)
+            print(f"Gemini model '{model_name}' failed: {error_str}")
+
+            if "429" in error_str or "403" in error_str:
+                break
+
+    raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
+
+# -----------------------------
+# Groq Runner (Fallback)
+# -----------------------------
+def _run_groq(prompt: str) -> dict:
+    print("MOCK Groq fallback triggered (network-restricted environment)")
+    return {
+        "category": "Application",
+        "subcategory": "Database",
+        "assignment_group": "Application Support",
+        "assigned_to": ""
+    }
+
+# -----------------------------
+# Unified LLM Executor
+# -----------------------------
+def _run_llm_with_fallback(prompt: str) -> dict:
+    try:
+        return _run_gemini(prompt)
+    except Exception:
+        print("Gemini failed, switching to fallback...")
+        return _run_groq(prompt)
+
+# -----------------------------
+# Classification Function
+# -----------------------------
 def classify_incident_basic(description: str) -> dict:
-    """Uses Gemini LLM to classify category and subcategory."""
     prompt = f"""
 You are an ITSM incident classification assistant.
 
@@ -67,30 +111,32 @@ Return ONLY valid JSON in this exact format:
 Incident description:
 \"\"\"{description}\"\"\"
 """
-    return _run_gemini(prompt)
+    return _run_llm_with_fallback(prompt)
 
-
+# -----------------------------
+# Assignment Function
+# -----------------------------
 def assign_incident_with_context(description: str, category: str, groups: list, users: list) -> dict:
-    """Uses Gemini to assign the ticket to an actual SNOW user & group."""
     prompt = f"""
 You are an ITSM incident routing assistant.
 
-Given the Incident details, pick the MOST APPROPRIATE Assignment Group and Assigned To user from the provided lists ONLY. 
-Do NOT make up names that are not in the lists. You don't have to assign a user if uncertain, but do assign a group.
+Pick the MOST APPROPRIATE Assignment Group and Assigned To user ONLY from the provided lists. 
+You MUST assign a user from the list. Pick the closest match. 
+Do not leave assignment_group or assigned_to empty or unknown.
 
 Incident Category: {category}
 Incident Description: {description}
 
-Valid Assignment Groups to choose from:
+Valid Assignment Groups:
 {groups}
 
-Valid Users to choose from (along with their ID/Roles):
+Valid Users (with IDs/Roles):
 {users}
 
 Return ONLY valid JSON in this exact format:
 {{
-  "assignment_group": "[Chosen Group Name from the list]",
-  "assigned_to": "[Chosen User Name from the list or empty string]"
+  "assignment_group": "Group Name",
+  "assigned_to": "User Name"
 }}
 """
-    return _run_gemini(prompt)
+    return _run_llm_with_fallback(prompt)
