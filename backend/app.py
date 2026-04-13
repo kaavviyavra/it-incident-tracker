@@ -7,13 +7,14 @@ from requests.auth import HTTPBasicAuth
 
 from store import incidents
 from llm_client import classify_incident_basic, assign_incident_with_context
+from servicenow_choices import get_choices_for_llm
 
 load_dotenv()
 app = Flask(__name__)
 
 # --- ServiceNow Fetchers ---
 def get_snow_auth():
-    snow_url = os.getenv("SNOW_INSTANCE_URL")
+    snow_url = os.getenv("SNOW_INSTANCE_URL", "").rstrip("/")
     snow_user = os.getenv("SNOW_USERNAME")
     snow_pwd = os.getenv("SNOW_PASSWORD")
     if not all([snow_url, snow_user, snow_pwd]):
@@ -44,13 +45,19 @@ def fetch_servicenow_users(limit=50):
     response.raise_for_status()
     return response.json().get("result", [])
 
-def update_snow_work_notes(sys_id, work_notes):
+def update_snow_incident(sys_id, update_data):
     url, auth = get_snow_auth()
-    api_url = f"{url}/api/now/table/incident/{sys_id}"
+    api_url = f"{url}/api/now/table/incident/{sys_id}?sysparm_input_display_value=true"
     try:
-        requests.patch(api_url, auth=auth, json={"work_notes": work_notes}, headers={"Accept": "application/json"}, verify=False)
-    except:
-        pass
+        print(f"DEBUG: Patching SNOW {sys_id} with data: {update_data}")
+        response = requests.patch(api_url, auth=auth, json=update_data, headers={"Accept": "application/json"}, verify=False)
+        if response.status_code != 200:
+             print(f"SNOW Update Warning (Status {response.status_code}): {response.text}")
+        response.raise_for_status()
+        print(f"SNOW Update Successful for {sys_id}")
+    except Exception as e:
+        error_details = response.text if 'response' in locals() else "No response"
+        print(f"CRITICAL: Failed to update SNOW incident {sys_id}: {e}\nDetails: {error_details}")
 
 # --- Priority Calculation ---
 def calculate_priority(impact, urgency):
@@ -137,13 +144,43 @@ def classify_incident(incident_id):
         return jsonify({"error": "Incident not found"}), 404
 
     try:
-        result = classify_incident_basic(incident["description"])
+        # 1. Fetch live choices
+        categories, subcategories_map, category_map = get_choices_for_llm()
+
+        # 2. Run Classification with dynamic choices
+        result = classify_incident_basic(incident["description"], categories, subcategories_map, category_map)
         incident["category"] = result.get("category", "Unknown")
         incident["subcategory"] = result.get("subcategory", "Unknown")
-        # Priority is now calculated deterministically, ignoring LLM suggestion
+        # Priority is calculated deterministically
         incident["priority"] = calculate_priority(incident.get("impact"), incident.get("urgency"))
         incident["status"] = "Classified"
         incident["history"].append(f"Classified: {incident['category']} / {incident['subcategory']}")
+
+        # 3. Patch SNOW fields and work notes
+        work_notes = (
+            f"--- AI Initial Classification ---\n"
+            f"Category: {incident['category']}\n"
+            f"Subcategory: {incident['subcategory']}\n"
+            f"Priority (Calculated): {incident['priority']}\n"
+        )
+        
+        impact_val = incident.get("impact", "3").split(' ')[0]
+        urgency_val = incident.get("urgency", "3").split(' ')[0]
+
+        # Clean values to avoid whitespace issues
+        cat_val = str(incident["category"]).strip()
+        subcat_val = str(incident["subcategory"]).strip()
+
+        update_data = {
+            "work_notes": work_notes,
+            "category": cat_val,
+            "subcategory": subcat_val,
+            "u_subcategory": subcat_val, # Fallback for some custom instances
+            "impact": impact_val,
+            "urgency": urgency_val
+        }
+        update_snow_incident(incident.get("sys_id"), update_data)
+
         return jsonify(incident)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -171,21 +208,55 @@ def assign_incident(incident_id):
             user_info
         )
         
-        incident["assignment_group"] = result.get("assignment_group", "Unknown")
-        incident["assigned_to"] = result.get("assigned_to", "Unknown")
+        assigned_group_name = result.get("assignment_group", "Unknown")
+        assigned_to_raw = result.get("assigned_to", "Unknown")
+        
+        import re
+        assigned_to_clean = re.sub(r'\s*\(.*?\)', '', assigned_to_raw).strip()
+
+        incident["assignment_group"] = assigned_group_name
+        incident["assigned_to"] = assigned_to_clean
         incident["status"] = "Assigned"
         log_msg = f"Assigned to {incident['assignment_group']} -> {incident['assigned_to']}"
         incident["history"].append(log_msg)
         
-        # 3. Patch SNOW work notes
+        # Format the update data safely. Map to sys_id if possible.
+        update_data = {}
+        
+        # Find group sys_id
+        group_sys_id = None
+        for g in groups_raw:
+            if g.get("name") == assigned_group_name:
+                group_sys_id = g.get("sys_id")
+                break
+        
+        if group_sys_id:
+            update_data["assignment_group"] = group_sys_id
+        else:
+            update_data["assignment_group"] = assigned_group_name  # fallback to display value string
+
+        # Find user sys_id
+        user_sys_id = None
+        for u in users_raw:
+            if u.get("name") == assigned_to_clean:
+                user_sys_id = u.get("sys_id")
+                break
+        
+        if user_sys_id:
+            update_data["assigned_to"] = user_sys_id
+        else:
+            update_data["assigned_to"] = assigned_to_clean  # fallback to display value string
+            
+        # Add work notes
         work_notes = (
-            f"--- AI Assignment & Classification ---\n"
-            f"Category: {incident['category']}\n"
-            f"Subcategory: {incident['subcategory']}\n"
+            f"--- AI Assignment ---\n"
             f"Assignment Group: {incident['assignment_group']}\n"
             f"Assigned To: {incident['assigned_to']}\n"
         )
-        update_snow_work_notes(incident.get("sys_id"), work_notes)
+        update_data["work_notes"] = work_notes
+        
+        # Patch SNOW fields
+        update_snow_incident(incident.get("sys_id"), update_data)
 
         return jsonify(incident)
     except Exception as e:
@@ -200,7 +271,19 @@ def resolve_incident(incident_id):
 
     incident["status"] = "Resolved"
     incident["history"].append("Marked as Resolved via UI.")
-    update_snow_work_notes(incident.get("sys_id"), "Incident manually marked as Resolved via Incident Tracker.")
+    
+    update_data = {
+        "work_notes": "Incident manually marked as Resolved via Incident Tracker.",
+        "state": "6", # 6 is typical for Resolved
+        "close_code": "Solved (Permanently)",
+        "close_notes": "Resolved via Incident Tracker Dashboard.",
+    }
+    
+    # Optional: fetch the sys_user id for the current user if we want 'resolved_by'.
+    # We will pass a generic text in close_notes or rely on API identity for resolved_by.
+    # `resolved_at` is usually set automatically by ServiceNow upon state changing to 6.
+    
+    update_snow_incident(incident.get("sys_id"), update_data)
     
     return jsonify(incident)
 

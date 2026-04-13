@@ -3,7 +3,7 @@ import json
 import re
 from dotenv import load_dotenv
 from google import genai
-from groq import Groq
+
 
 # Load variables from .env
 load_dotenv()
@@ -15,12 +15,7 @@ gemini_client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
-# -----------------------------
-# Groq Client (Fallback - LLaMA 3)
-# -----------------------------
-groq_client = Groq(
-    api_key=os.getenv("GROQ_API_KEY")
-)
+
 
 # -----------------------------
 # Helper: Clean & Parse JSON
@@ -41,11 +36,12 @@ def _clean_and_parse_json(text: str) -> dict:
 # -----------------------------
 def _run_gemini(prompt: str) -> dict:
     models_to_try = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash-latest",
-        "gemini-pro"
+        "models/gemini-3.1-flash-lite-preview",
+        "models/gemini-3-flash-preview",
+        "models/gemini-2.5-flash-lite",
+        "models/gemini-2.0-flash-lite",
+        "models/gemini-2.5-flash",
+        "models/gemini-2.0-flash"
     ]
 
     last_error = None
@@ -64,48 +60,50 @@ def _run_gemini(prompt: str) -> dict:
             error_str = str(e)
             print(f"Gemini model '{model_name}' failed: {error_str}")
 
-            if "429" in error_str or "403" in error_str:
-                break
+            if "403" in error_str:
+                break  # Break only on 403 (Invalid API Key)
 
     raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
 
-# -----------------------------
-# Groq Runner (Fallback)
-# -----------------------------
-def _run_groq(prompt: str) -> dict:
-    print("MOCK Groq fallback triggered (network-restricted environment)")
-    return {
-        "category": "Application",
-        "subcategory": "Database",
-        "assignment_group": "Application Support",
-        "assigned_to": ""
-    }
+
 
 # -----------------------------
 # Unified LLM Executor
 # -----------------------------
 def _run_llm_with_fallback(prompt: str) -> dict:
-    try:
-        return _run_gemini(prompt)
-    except Exception:
-        print("Gemini failed, switching to fallback...")
-        return _run_groq(prompt)
+    """Runs the LLM. Fallback logic removed as Groq is no longer used."""
+    return _run_gemini(prompt)
 
+
+# -----------------------------
 # -----------------------------
 # Classification Function
 # -----------------------------
-def classify_incident_basic(description: str) -> dict:
-    prompt = f"""
-You are an ITSM incident classification assistant.
+def classify_incident_basic(description: str, categories: list, subcategories_map: dict, category_map: dict) -> dict:
+    # Prepare the subcategory guidance string
+    subcat_guidance = ""
+    for cat_label in categories:
+        cat_value = category_map.get(cat_label)
+        subs = subcategories_map.get(cat_value, [])
+        if subs:
+            subcat_guidance += f"- If Category is {cat_label}: Pick from {subs}\n"
 
-Classify the incident based on its description into:
-1. Category (e.g., Network, Application, Infrastructure, Hardware)
-2. Subcategory (e.g., VPN, Database, Server, Frontend, ERP)
+    prompt = f"""
+You are a ServiceNow incident classification assistant.
+
+Classify the incident based on its description. You MUST pick the Category strictly from this list:
+{categories}
+
+For the Subcategory, you MUST pick a value that is a standard "child" of the category in ServiceNow. 
+Based on these categories, pick from the following choices only:
+{subcat_guidance}
+
+Choose the most appropriate one. If none match perfectly, choose the closest generic one from the lists above.
 
 Return ONLY valid JSON in this exact format:
 {{
-  "category": "Application",
-  "subcategory": "Database"
+  "category": "Chosen Category",
+  "subcategory": "Chosen Subcategory"
 }}
 
 Incident description:
