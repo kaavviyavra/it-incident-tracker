@@ -1,24 +1,13 @@
-import os
 import requests
-from requests.auth import HTTPBasicAuth
-from dotenv import load_dotenv
-
-load_dotenv()
+from .client import get_snow_auth
 
 # Global cache to avoid excessive API calls
 CACHE = {
     "categories": None,
     "subcategories": None, # dict grouped by category value
+    "category_map": None,
     "last_fetch": 0
 }
-
-def get_snow_auth():
-    snow_url = os.getenv("SNOW_INSTANCE_URL", "").rstrip("/")
-    snow_user = os.getenv("SNOW_USERNAME")
-    snow_pwd = os.getenv("SNOW_PASSWORD")
-    if not all([snow_url, snow_user, snow_pwd]):
-        raise ValueError("ServiceNow credentials are not configured in the .env file.")
-    return snow_url, HTTPBasicAuth(snow_user, snow_pwd)
 
 def fetch_all_choices():
     """
@@ -38,11 +27,11 @@ def fetch_all_choices():
     headers = {"Accept": "application/json"}
     
     try:
-        cat_res = requests.get(cat_api, auth=auth, headers=headers, verify=False)
+        cat_res = requests.get(cat_api, auth=auth, headers=headers, verify="netskope_root.pem")
         cat_res.raise_for_status()
         categories = cat_res.json().get("result", [])
         
-        sub_res = requests.get(sub_api, auth=auth, headers=headers, verify=False)
+        sub_res = requests.get(sub_api, auth=auth, headers=headers, verify="netskope_root.pem")
         sub_res.raise_for_status()
         subcategories_raw = sub_res.json().get("result", [])
         
