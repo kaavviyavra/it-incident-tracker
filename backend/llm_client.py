@@ -4,7 +4,6 @@ import re
 from dotenv import load_dotenv
 from google import genai
 
-
 # Load variables from .env
 load_dotenv()
 
@@ -14,8 +13,6 @@ load_dotenv()
 gemini_client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
-
-
 
 # -----------------------------
 # Helper: Clean & Parse JSON
@@ -32,9 +29,19 @@ def _clean_and_parse_json(text: str) -> dict:
         raise ValueError("LLM returned invalid JSON")
 
 # -----------------------------
+# TOON Utilities
+# -----------------------------
+def parse_toon(text: str) -> dict:
+    return {
+        k.lower(): v.strip()
+        for k, v in
+        (line.split(" ", 1) for line in text.splitlines() if " " in line)
+    }
+
+# -----------------------------
 # Gemini Runner (Primary)
 # -----------------------------
-def _run_gemini(prompt: str) -> dict:
+def _run_gemini(prompt: str, response_format: str = "json") -> dict:
     models_to_try = [
         "models/gemini-3.1-flash-lite-preview",
         "models/gemini-3-flash-preview",
@@ -52,8 +59,24 @@ def _run_gemini(prompt: str) -> dict:
                 model=model_name,
                 contents=prompt
             )
+
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                usage = response.usage_metadata
+                print(
+                    f"[Gemini Tokens] Model: {model_name} | "
+                    f"Prompt tokens: {usage.prompt_token_count} | "
+                    f"Response tokens: {usage.candidates_token_count} | "
+                    f"Total tokens: {usage.total_token_count}"
+                )
+            else:
+                print(f"[Gemini Tokens] Model: {model_name} | Usage metadata not available")
+
             print(f"Gemini success with model: {model_name}")
-            return _clean_and_parse_json(response.text)
+
+            if response_format == "toon":
+                return parse_toon(response.text)
+            else:
+                return _clean_and_parse_json(response.text)
 
         except Exception as e:
             last_error = e
@@ -61,80 +84,63 @@ def _run_gemini(prompt: str) -> dict:
             print(f"Gemini model '{model_name}' failed: {error_str}")
 
             if "403" in error_str:
-                break  # Break only on 403 (Invalid API Key)
+                break
 
     raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
-
-
 
 # -----------------------------
 # Unified LLM Executor
 # -----------------------------
-def _run_llm_with_fallback(prompt: str) -> dict:
+def _run_llm_with_fallback(prompt: str, response_format: str = "json") -> dict:
     """Runs the LLM. Fallback logic removed as Groq is no longer used."""
     return _run_gemini(prompt)
-
 
 # -----------------------------
 # -----------------------------
 # Classification Function
 # -----------------------------
-def classify_incident_basic(description: str, categories: list, subcategories_map: dict, category_map: dict) -> dict:
-    # Prepare the subcategory guidance string
-    subcat_guidance = ""
+def classify_incident_basic(description: str, categories: list,
+                            subcategories_map: dict, category_map: dict) -> dict:
+    # Build compact subcategory rules
+    subcat_rules = []
     for cat_label in categories:
         cat_value = category_map.get(cat_label)
         subs = subcategories_map.get(cat_value, [])
         if subs:
-            subcat_guidance += f"- If Category is {cat_label}: Pick from {subs}\n"
+            subcat_rules.append(f"{cat_label}:{'|'.join(subs)}")
 
-    prompt = f"""
-You are a ServiceNow incident classification assistant.
+    toon_prompt = f"""TASK CLASSIFY_INCIDENT
+DOMAIN SERVICENOW
 
-Classify the incident based on its description. You MUST pick the Category strictly from this list:
-{categories}
+DESC {description}
 
-For the Subcategory, you MUST pick a value that is a standard "child" of the category in ServiceNow. 
-Based on these categories, pick from the following choices only:
-{subcat_guidance}
+CATEGORIES {'|'.join(categories)}
+SUBCATEGORY_RULES {';'.join(subcat_rules)}
 
-Choose the most appropriate one. If none match perfectly, choose the closest generic one from the lists above.
-
-Return ONLY valid JSON in this exact format:
-{{
-  "category": "Chosen Category",
-  "subcategory": "Chosen Subcategory"
-}}
-
-Incident description:
-\"\"\"{description}\"\"\"
+OUTPUT category subcategory
+FORMAT JSON
+STRICT true
 """
-    return _run_llm_with_fallback(prompt)
+
+    return _run_llm_with_fallback(toon_prompt)
 
 # -----------------------------
 # Assignment Function
 # -----------------------------
-def assign_incident_with_context(description: str, category: str, groups: list, users: list) -> dict:
-    prompt = f"""
-You are an ITSM incident routing assistant.
+def assign_incident_with_context(description: str, category: str,
+                                 groups: list, users: list) -> dict:
+    toon_prompt = f"""TASK ASSIGN_INCIDENT
+DOMAIN ITSM
 
-Pick the MOST APPROPRIATE Assignment Group and Assigned To user ONLY from the provided lists. 
-You MUST assign a user from the list. Pick the closest match. 
-Do not leave assignment_group or assigned_to empty or unknown.
+CATEGORY {category}
+DESC {description}
 
-Incident Category: {category}
-Incident Description: {description}
+GROUPS {'|'.join(groups)}
+USERS {'|'.join(users)}
 
-Valid Assignment Groups:
-{groups}
-
-Valid Users (with IDs/Roles):
-{users}
-
-Return ONLY valid JSON in this exact format:
-{{
-  "assignment_group": "Group Name",
-  "assigned_to": "User Name"
-}}
+REQUIRE assignment_group assigned_to
+FORMAT JSON
+STRICT true
 """
-    return _run_llm_with_fallback(prompt)
+
+    return _run_llm_with_fallback(toon_prompt)
