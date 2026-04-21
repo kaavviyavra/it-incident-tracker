@@ -1,0 +1,24 @@
+{
+  "3323328f8f321852799e1ecde566655683dca70d84c309e481a44d9fe566c9d0": {
+    "category:": "Software",
+    "subcategory:": "Password Reset",
+    "impact:": "3",
+    "urgency:": "2"
+  },
+  "1733352676ea093803d696bf4cdaea5f07421e6e4619f689d2618690dd8d49d6": {
+    "category:": "Password Reset",
+    "subcategory:": "Internal Application",
+    "impact:": "3",
+    "urgency:": "2"
+  },
+  "3dbbad3aebd2f708512f44b6b56c5874402cd9988f4f1b5cfa0ce88b5a07a774": {
+    "category:": "Hardware",
+    "subcategory:": "Monitor",
+    "impact:": "3",
+    "urgency:": "2"
+  },
+  "bf07b3497fe0601e974f117c99c9ddd01fe9ee52a8452700a8198f737eeb4bff": {
+    "assignment_group:": "Network",
+    "assigned_to:": "Rob Phillips"
+  }
+}

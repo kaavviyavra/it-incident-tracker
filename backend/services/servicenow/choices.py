@@ -27,11 +27,11 @@ def fetch_all_choices():
     headers = {"Accept": "application/json"}
     
     try:
-        cat_res = requests.get(cat_api, auth=auth, headers=headers, verify="netskope_root.pem")
+        cat_res = requests.get(cat_api, auth=auth, headers=headers, verify="certs/netskope_root.pem")
         cat_res.raise_for_status()
         categories = cat_res.json().get("result", [])
         
-        sub_res = requests.get(sub_api, auth=auth, headers=headers, verify="netskope_root.pem")
+        sub_res = requests.get(sub_api, auth=auth, headers=headers, verify="certs/netskope_root.pem")
         sub_res.raise_for_status()
         subcategories_raw = sub_res.json().get("result", [])
         
