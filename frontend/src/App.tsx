@@ -175,7 +175,10 @@ export default function App() {
     setError(null);
     try {
       const response = await fetch('/api/incidents');
-      if (!response.ok) throw new Error('Failed to connect to the incident management server.');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to connect to the incident management server.');
+      }
       
       const rawData = await response.json();
       

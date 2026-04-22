@@ -119,18 +119,24 @@ DOMAIN ITSM
 # -----------------------------
 # Classification (LLM = Intent)
 # -----------------------------
-def build_classifier_static_prompt(categories, subcategories_map, category_map):
+def build_classifier_static_prompt():
+    return f"""{BASE_TOON_HEADER}
+{CLASSIFY_BASE_HEADER}
+OUTPUT category subcategory impact urgency
+FROMAT TOON
+"""
+
+
+def classify_incident_basic(description, categories, subcategories_map, category_map):
+    static_prompt = build_classifier_static_prompt()
+
     rules = []
     for cat_label in categories:
         subs = subcategories_map.get(category_map.get(cat_label), [])
         if subs:
             rules.append(f"{cat_label}:{'|'.join(subs)}")
 
-    return f"""{BASE_TOON_HEADER}
-{CLASSIFY_BASE_HEADER}
-OUTPUT category subcategory impact urgency
-FROMAT TOON
-
+    toon_prompt = f"""{static_prompt}
 CATEGORIES {'|'.join(categories)}
 SUBCATEGORY_RULES {';'.join(rules)}
 
@@ -138,21 +144,12 @@ IMPACT_RULES 1:Enterprise/Multiple_Depts | 2:Single_Dept/Group | 3:Single_User
 URGENCY_RULES 1:Critical_Stopped | 2:Degraded_Response_Today | 3:Low_Impact_Workaround
 
 REQUIRE category subcategory impact urgency
-"""
-
-
-def classify_incident_basic(description, categories, subcategories_map, category_map):
-    static_prompt = build_classifier_static_prompt(
-        categories, subcategories_map, category_map
-    )
-
-    toon_prompt = f"""{static_prompt}
 DESC {description}
 """
 
     result = run_llm_with_prompt_cache(toon_prompt, response_format="toon")
 
-    # ✅ RESOLVER: classification safety
+    #RESOLVER: classification safety
     if result.get("category") not in categories:
         result["category"] = categories[0]
 
@@ -228,7 +225,6 @@ DESC {description}
 """
 
     llm_output = run_llm_with_prompt_cache(toon_prompt, response_format="toon")
-    print("DEBUG: Raw LLM Assignment Output →", llm_output)
    
     resolved = resolve_assignment(
         llm_output=llm_output,
