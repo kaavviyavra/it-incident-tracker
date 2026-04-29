@@ -22,12 +22,15 @@ import {
   ExternalLink,
   Menu,
   X,
-  Tag
+  Tag,
+  FileSpreadsheet,
+  UploadCloud,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Incident, Priority, Status, TeamMember, Category } from './types';
 
-type View = 'dashboard' | 'profile' | 'help' | 'team';
+type View = 'dashboard' | 'profile' | 'help' | 'team' | 'batch';
 
 const StatusBadge = ({ status }: { status: Status }) => {
   const styles = {
@@ -169,6 +172,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<{id: string, message: string, timestamp: Date}[]>([]);
+  const [batchFile, setBatchFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   const fetchIncidents = async () => {
     setIsLoading(true);
@@ -283,6 +289,46 @@ export default function App() {
     }
   };
 
+  const handleBatchUpload = async () => {
+    if (!batchFile) return;
+    
+    setIsUploading(true);
+    setUploadMessage(null);
+    
+    const formData = new FormData();
+    formData.append('file', batchFile);
+    
+    try {
+      const res = await fetch('/api/batch/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const header = res.headers.get('Content-Disposition');
+        const filename = header ? header.split('filename=')[1]?.replace(/"/g, '') : `processed_${batchFile.name}`;
+        a.download = filename || 'processed_incidents.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        
+        setUploadMessage({type: 'success', text: 'File processed and downloaded successfully!'});
+        setBatchFile(null);
+      } else {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || 'Failed to process file');
+      }
+    } catch (err) {
+      setUploadMessage({type: 'error', text: err instanceof Error ? err.message : 'An unknown error occurred'});
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter(incident => {
@@ -305,6 +351,7 @@ export default function App() {
   const sidebarItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'team', label: 'Team Directory', icon: Users },
+    { id: 'batch', label: 'Batch Processing', icon: FileSpreadsheet },
     { id: 'profile', label: 'My Profile', icon: User },
     { id: 'help', label: 'Help Center', icon: HelpCircle },
   ];
@@ -511,6 +558,79 @@ export default function App() {
                     </div>
                   </>
                 )}
+              </motion.div>
+            )}
+
+            {currentView === 'batch' && (
+              <motion.div
+                key="batch"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="max-w-3xl mx-auto"
+              >
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
+                  <div className="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                    <div className="bg-indigo-50 p-3 rounded-2xl">
+                      <FileSpreadsheet className="w-8 h-8 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-slate-900">Batch Processing</h3>
+                      <p className="text-slate-500 font-medium">Upload Excel/CSV sheets with thousands of incidents to classify them offline.</p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    <div 
+                      className="border-2 border-dashed border-slate-200 hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50/30 transition-all rounded-2xl p-12 text-center cursor-pointer relative"
+                    >
+                      <input 
+                        type="file" 
+                        accept=".csv, .xlsx"
+                        onChange={(e) => {
+                          setBatchFile(e.target.files?.[0] || null);
+                          setUploadMessage(null);
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        disabled={isUploading}
+                      />
+                      <UploadCloud className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                      <h4 className="font-bold text-slate-900 mb-2">
+                        {batchFile ? batchFile.name : 'Click to upload or drag and drop'}
+                      </h4>
+                      <p className="text-sm text-slate-500">
+                        {batchFile ? `${(batchFile.size / 1024 / 1024).toFixed(2)} MB` : 'XLSX or CSV files only'}
+                      </p>
+                    </div>
+
+                    {uploadMessage && (
+                      <div className={`p-4 rounded-xl flex items-center gap-3 ${uploadMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                        {uploadMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                        <span className="font-medium text-sm">{uploadMessage.text}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end">
+                      <button 
+                        onClick={handleBatchUpload}
+                        disabled={!batchFile || isUploading}
+                        className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${!batchFile || isUploading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200'}`}
+                      >
+                        {isUploading ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <FileSpreadsheet className="w-4 h-4" />
+                            Process Batch File
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             )}
 

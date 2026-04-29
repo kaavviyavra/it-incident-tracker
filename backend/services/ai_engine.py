@@ -53,9 +53,9 @@ def _clean_and_parse_json(text: str) -> dict:
 
 def parse_toon(text: str) -> dict:
     return {
-        k.lower().rstrip(':'): v.strip()
+        k.lower().strip().rstrip(':'): v.strip()
         for k, v in
-        (line.split(" ", 1) for line in text.splitlines() if " " in line)
+        (line.strip().split(" ", 1) for line in text.splitlines() if " " in line.strip())
     }
 
 # -----------------------------
@@ -63,8 +63,8 @@ def parse_toon(text: str) -> dict:
 # -----------------------------
 def _run_llm(prompt: str, response_format="json") -> dict:
     models = [
-        "models/gemini-3.1-pro",
         "models/gemini-3.1-flash-lite-preview",
+        "models/gemini-3.1-pro",
         "models/gemini-3-flash-preview",
         "models/gemini-2.5-flash",
         "models/gemini-2.0-flash"
@@ -123,7 +123,7 @@ def build_classifier_static_prompt():
     return f"""{BASE_TOON_HEADER}
 {CLASSIFY_BASE_HEADER}
 OUTPUT category subcategory impact urgency
-FROMAT TOON
+FORMAT TOON
 """
 
 
@@ -159,10 +159,11 @@ DESC {description}
     if result.get("subcategory") not in valid_subs and valid_subs:
         result["subcategory"] = valid_subs[0]
         
-    if str(result.get("impact")) not in ["1", "2", "3"]:
-         result["impact"] = "3"
-    if str(result.get("urgency")) not in ["1", "2", "3"]:
-         result["urgency"] = "3"
+    impact_str = str(result.get("impact", "3")).strip()
+    result["impact"] = impact_str[0] if impact_str and impact_str[0] in ["1", "2", "3"] else "3"
+
+    urgency_str = str(result.get("urgency", "3")).strip()
+    result["urgency"] = urgency_str[0] if urgency_str and urgency_str[0] in ["1", "2", "3"] else "3"
 
     return result
 
@@ -173,7 +174,7 @@ def build_assignment_static_prompt():
     return f"""{BASE_TOON_HEADER}
 {ASSIGN_BASE_HEADER}
 OUTPUT assignment_group assigned_to
-FROMAT TOON
+FORMAT TOON
 """
 
 

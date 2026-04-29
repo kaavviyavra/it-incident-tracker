@@ -70,7 +70,8 @@ def get_formatted_team() -> list:
 
 
 # --- Rule-based Constants ---
-RED_FLAG_KEYWORDS = ["outage", "production down", "emergency", "breach", "critical bug", "p1", "system down", "security incident"]
+RED_FLAG_KEYWORDS = ["outage", "production down", "emergency", "breach", "critical bug", "p1", "system down", "security incident", "suspicious", "compromise", "unauthorized"]
+SECURITY_KEYWORDS = ["breach", "compromise", "suspicious", "unauthorized", "credential", "security incident"]
 
 def check_red_flags(description: str) -> bool:
     """Returns True if highly critical keywords are detected in the description."""
@@ -83,6 +84,7 @@ def process_classification(incident):
     
     # Pre-LLM Step: Deterministic Red-Flag Keyword Scan
     has_red_flags = check_red_flags(description)
+    is_security_threat = any(k in description.lower() for k in SECURITY_KEYWORDS)
     
     # 1. Fetch live choices
     categories, subcategories_map, category_map = get_choices_for_llm()
@@ -102,6 +104,13 @@ def process_classification(incident):
 
     # --- Hybrid Override Engine ---
     
+    # Rule 0: Security Force (Deterministic)
+    if is_security_threat:
+        category = "Security"
+        impact_num = "1"
+        urgency_num = "1"
+        overrides.append("Security threat detected (Forced Category & High Impact)")
+
     # Rule 1: Red-Flag Keywords
     if has_red_flags:
         impact_num = "1"

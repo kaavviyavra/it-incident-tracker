@@ -1,7 +1,10 @@
 import os
 from dotenv import load_dotenv
-from flask import Flask, jsonify
 
+load_dotenv()
+
+from flask import Flask, jsonify, request, send_file
+from werkzeug.utils import secure_filename
 from store.memory import incidents
 from services.incident_logic import (
     get_dashboard_incidents,
@@ -10,8 +13,8 @@ from services.incident_logic import (
     process_assignment,
     process_resolution
 )
+from services.batch_classifier import process_batch_file
 
-load_dotenv()
 app = Flask(__name__)
 
 # --- API Endpoints ---
@@ -72,6 +75,37 @@ def get_team():
         return jsonify(team)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/batch/upload", methods=["POST"])
+def upload_batch():
+    """Handles Excel/CSV file upload, processes it using batch_classifier, and returns updated file."""
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+        
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+        
+    if file and (file.filename.endswith('.csv') or file.filename.endswith('.xlsx')):
+        try:
+            file_content = file.read()
+            processed_file_io = process_batch_file(file_content, file.filename)
+            
+            output_filename = f"processed_{secure_filename(file.filename)}"
+            if not output_filename.endswith('.xlsx'):
+                output_filename = output_filename.rsplit('.', 1)[0] + '.xlsx'
+                
+            return send_file(
+                processed_file_io,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=output_filename
+            )
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    else:
+        return jsonify({"error": "Allowed file types are .csv or .xlsx"}), 400
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

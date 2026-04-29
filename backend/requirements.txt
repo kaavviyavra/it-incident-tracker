@@ -3,4 +3,10 @@ pytest
 pytest-mock
 python-dotenv
 google-genai
+requests
 openai
+pandas
+openpyxl
+sentence-transformers
+scikit-learn
+werkzeug
