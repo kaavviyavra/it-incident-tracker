@@ -2,8 +2,13 @@ import os
 import json
 import re
 import hashlib
+import time
 from dotenv import load_dotenv
 from google import genai
+
+# Cache Constants
+CACHE_TTL = 86400
+CACHE_MAX_SIZE = 5000
 
 _PROMPT_CACHE = {}
 
@@ -28,14 +33,30 @@ def normalize_prompt(prompt: str) -> str:
 def run_llm_with_prompt_cache(prompt: str, response_format="json") -> dict:
     normalized = normalize_prompt(prompt)
     key = hashlib.sha256(normalized.encode()).hexdigest()
+    current_time = time.time()
 
     if key in _PROMPT_CACHE:
-        print("[LLM Cache HIT]")
-        return _PROMPT_CACHE[key]
+        entry = _PROMPT_CACHE[key]
+        if current_time - entry["timestamp"] > CACHE_TTL:
+            print("[LLM Cache EXPIRED]")
+            del _PROMPT_CACHE[key]
+        else:
+            print("[LLM Cache HIT]")
+            return entry["response"]
 
     print("[LLM Cache MISS]")
     result = _run_llm(prompt, response_format)
-    _PROMPT_CACHE[key] = result
+    
+    _PROMPT_CACHE[key] = {
+        "response": result,
+        "timestamp": current_time
+    }
+
+    while len(_PROMPT_CACHE) > CACHE_MAX_SIZE:
+        oldest_key = next(iter(_PROMPT_CACHE))
+        del _PROMPT_CACHE[oldest_key]
+        print("[LLM Cache EVICTED]")
+
     return result
 
 # -----------------------------
@@ -237,3 +258,81 @@ DESC {description}
     print("DEBUG: Resolved Assignment →", resolved)
 
     return resolved
+
+
+def generate_ai_summary(insights):
+    prompt = f"""
+You are an AIOps assistant.
+
+Analyze ITSM incident data and provide a simple explanation.
+
+DATA:
+{json.dumps(insights, indent=2)}
+
+INSTRUCTIONS:
+- Explain why incidents are happening
+- Describe key trends
+- Highlight risks
+- Suggest actions
+
+OUTPUT FORMAT (STRICT JSON):
+{{
+  "summary": "..."
+}}
+"""
+
+    return run_llm_with_prompt_cache(prompt, response_format="json")
+
+
+
+def generate_recommendations(insights):
+    prompt = f"""
+You are an AIOps system.
+
+Based on ITSM incident insights, generate actionable recommendations.
+
+DATA:
+{json.dumps(insights, indent=2)}
+
+INSTRUCTIONS:
+- Identify major problems
+- Suggest clear actions
+- Keep it practical and short
+
+OUTPUT FORMAT (STRICT JSON):
+[
+  {{
+    "problem": "...",
+    "recommendation": "..."
+  }}
+]
+"""
+
+    return run_llm_with_prompt_cache(prompt, response_format="json")
+
+
+
+def ask_data(question, insights):
+    prompt = f"""
+You are an AIOps assistant.
+
+Answer the user's question using ITSM insights.
+
+DATA:
+{json.dumps(insights, indent=2)}
+
+QUESTION:
+{question}
+
+INSTRUCTIONS:
+- Answer in simple English
+- Be concise
+- Base answer only on given data
+
+OUTPUT FORMAT (STRICT JSON):
+{{
+  "answer": "..."
+}}
+"""
+
+    return run_llm_with_prompt_cache(prompt, response_format="json")
