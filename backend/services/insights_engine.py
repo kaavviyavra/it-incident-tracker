@@ -81,9 +81,7 @@ def generate_full_insights(df: pd.DataFrame, mapping: dict = None, start_date: s
         "priority_vs_resolution_time": {},
         "trends": [],
         "spikes": [],
-        "problem_candidates": [],
-        "average_confidence": 1.0,
-        "methods": {}
+        "problem_candidates": []
     }
     
     if len(df) == 0:
@@ -198,22 +196,5 @@ def generate_full_insights(df: pd.DataFrame, mapping: dict = None, start_date: s
                 })
         except Exception:
             pass
-
-    # 7. Confidence Score
-    conf_col = next((c for c in ["AI_Confidence", "confidence"] if c in df.columns), None)
-    if conf_col:
-        try:
-            conf_vals = pd.to_numeric(df[conf_col], errors="coerce").dropna()
-            if len(conf_vals) > 0:
-                insights["average_confidence"] = float(round(conf_vals.mean(), 4))
-        except Exception:
-            pass
-
-    # 8. Classification Methods
-    if "AI_Method" in df.columns:
-        for k, v in df["AI_Method"].value_counts().to_dict().items():
-            insights["methods"][str(k)] = int(v)
-    else:
-        insights["methods"]["HYBRID_AI"] = len(df)
 
     return insights
