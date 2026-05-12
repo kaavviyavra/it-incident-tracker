@@ -1,5 +1,8 @@
 import re
-from services.ai_engine import classify_incident_basic, assign_incident_with_context
+import logging
+
+logger = logging.getLogger(__name__)
+from services.ai import classify_incident_basic, assign_incident_with_context
 from services.servicenow.client import (
     fetch_incidents,
     update_incident,
@@ -162,6 +165,7 @@ def process_classification(incident):
         "impact": impact_num,
         "urgency": urgency_num
     }
+    logger.info(f"[Classification Complete] Incident ID {incident.get('id')} resolved to {category}/{subcategory} (Overrides: {len(overrides)})")
     update_incident(incident.get("sys_id"), update_data)
     return incident
 
@@ -203,9 +207,8 @@ def process_assignment(incident):
     update_data["work_notes"] = f"--- AI Assignment ---\nGroup: {assigned_group_name}\nAssigned To: {assigned_to_clean}\n"
     
     incident_sys_id = incident.get("sys_id")
-    print(f"DEBUG: assignment_group value type: {type(group_sys_id)} | value: {group_sys_id}")
-    print(f"DEBUG: assigned_to value type: {type(user_sys_id)} | value: {user_sys_id}")
-    print(f"DEBUG: Patching SNOW {incident_sys_id} with data:", update_data)
+    logger.info(f"[Assignment Processing] Linking Incident {incident.get('id')} to Group {assigned_group_name} and User {assigned_to_clean}")
+    logger.debug(f"Mapped Assignment IDs: Group={group_sys_id}, User={user_sys_id}")
     
     update_incident(incident_sys_id, update_data)
     return incident

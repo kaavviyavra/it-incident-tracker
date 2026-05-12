@@ -26,7 +26,7 @@ export interface BatchFile {
   filename: string;
   uploaded_at: string;
   status: 'Uploaded' | 'Classified';
-  powerbi_link?: string;
+
   headers?: string[];
   column_mapping?: Record<string, string>;
 }

@@ -4,7 +4,7 @@ import os
 # Ensure the backend directory is in the path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from services.ai_engine import run_llm_with_prompt_cache, parse_toon
+from services.ai import run_llm_with_prompt_cache, parse_toon
 
 def test_prompt_caching():
     print("\n" + "="*30)

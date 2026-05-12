@@ -1,3 +1,0 @@
-incidents = {}
-
-batch_datasets = {}

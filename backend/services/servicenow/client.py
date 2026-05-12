@@ -1,8 +1,10 @@
 import os
 import requests
 from requests.auth import HTTPBasicAuth
+import logging
 from dotenv import load_dotenv
 
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 def get_snow_auth():
@@ -50,7 +52,7 @@ def get_user_vip(user_sys_id):
             return str(vip_val).lower() == "true"
         return False
     except Exception as e:
-        print(f"Warning: Failed to fetch VIP status for user {user_sys_id}: {e}")
+        logger.warning(f"Failed to fetch VIP status for user {user_sys_id}: {e}")
         return False
 
 
@@ -58,15 +60,14 @@ def update_incident(sys_id, update_data):
     url, auth = get_snow_auth()
     api_url = f"{url}/api/now/table/incident/{sys_id}?sysparm_input_display_value=true"
     try:
-        print(f"DEBUG: Patching SNOW {sys_id} with data: {update_data}")
+        logger.info(f"[SNOW Sync] Preparing PATCH incident {sys_id}")
         response = requests.patch(api_url, auth=auth, json=update_data, headers={"Accept": "application/json"}, verify="certs/netskope_root.pem")
         if response.status_code != 200:
-             print(f"SNOW Update Warning (Status {response.status_code}): {response.text}")
+             logger.warning(f"[SNOW Warning] PATCH status {response.status_code}: {response.text}")
         response.raise_for_status()
-        print(f"SNOW Update Successful for {sys_id}")
+        logger.info(f"[SNOW Success] Updated Incident {sys_id} payload keys: {list(update_data.keys())}")
         return response.json().get("result")
     except Exception as e:
-        print(f"CRITICAL: SNOW Update (or Assignment) Failed for {sys_id}")
-        print("Status Code:", getattr(response, "status_code", "N/A") if 'response' in locals() else "N/A")
-        print("Response Text:", getattr(response, "text", "N/A") if 'response' in locals() else "N/A")
+        status_code = getattr(response, "status_code", "N/A") if 'response' in locals() else "N/A"
+        logger.error(f"[SNOW CRITICAL] Synchronize Failed for {sys_id} | HTTP Status: {status_code} | Error: {e}")
         raise e

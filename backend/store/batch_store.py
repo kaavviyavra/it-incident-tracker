@@ -12,7 +12,6 @@ class BatchStore:
             "filename": filename,
             "uploaded_at": datetime.now().isoformat(),
             "status": "Uploaded",
-            "powerbi_link": None,
             "headers": [],
             "column_mapping": {},
             "original_content": content,
@@ -47,12 +46,6 @@ class BatchStore:
             self.files[file_id]["status"] = status
             if processed_content:
                 self.files[file_id]["processed_content"] = processed_content
-            return True
-        return False
-
-    def update_powerbi_link(self, file_id, link):
-        if file_id in self.files:
-            self.files[file_id]["powerbi_link"] = link
             return True
         return False
 

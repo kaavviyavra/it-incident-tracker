@@ -26,7 +26,8 @@ import {
   FileSpreadsheet,
   UploadCloud,
   Download,
-  Trash2
+  Trash2,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Incident, Priority, Status, TeamMember, Category, BatchFile } from './types';
@@ -192,6 +193,8 @@ export default function App() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedTrendDate, setSelectedTrendDate] = useState<string | null>(null);
+  const [spikeWindowFilter, setSpikeWindowFilter] = useState<'7D' | '30D'>('7D');
+  const [isLlmEnabled, setIsLlmEnabled] = useState(true);
 
   const fetchIncidents = async () => {
     setIsLoading(true);
@@ -269,7 +272,7 @@ export default function App() {
   const fetchSummary = async (fileId: string, start?: string, end?: string) => {
     setIsSummaryLoading(true);
     try {
-      let url = `/api/summary?file_id=${fileId}`;
+      let url = `/api/summary?file_id=${fileId}&force_llm=${isLlmEnabled}`;
       if (start) url += `&start_date=${start}`;
       if (end) url += `&end_date=${end}`;
       const res = await fetch(url);
@@ -289,7 +292,7 @@ export default function App() {
   const fetchRecommendations = async (fileId: string, start?: string, end?: string) => {
     setIsRecsLoading(true);
     try {
-      let url = `/api/recommendations?file_id=${fileId}`;
+      let url = `/api/recommendations?file_id=${fileId}&force_llm=${isLlmEnabled}`;
       if (start) url += `&start_date=${start}`;
       if (end) url += `&end_date=${end}`;
       const res = await fetch(url);
@@ -311,7 +314,7 @@ export default function App() {
     setIsAsking(true);
     setAnswerText('');
     try {
-      const res = await fetch('/api/ask', {
+      const res = await fetch(`/api/ask?force_llm=${isLlmEnabled}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: questionText, file_id: selectedFileId })
@@ -359,7 +362,7 @@ export default function App() {
       setAnswerText('');
       setQuestionText('');
     }
-  }, [selectedFileId, batchFiles, startDate, endDate]);
+  }, [selectedFileId, batchFiles, startDate, endDate, isLlmEnabled]);
 
   const addToHistory = (message: string) => {
     setHistory(prev => [{
@@ -459,43 +462,29 @@ export default function App() {
     }
   };
 
-  const handleClassifyBatch = async (fileId: string) => {
+  const handleProcessBatch = async (fileId: string) => {
     setIsUploading(true);
     try {
-      const res = await fetch(`/api/batch/files/${fileId}/classify`, { 
+      const res = await fetch(`/api/batch/files/${fileId}/process`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mapping: columnMapping })
       });
       if (res.ok) {
         setBatchFiles(prev => prev.map(f => f.id === fileId ? { ...f, status: 'Classified', column_mapping: columnMapping } : f));
-        addToHistory(`Batch file ${fileId} classified successfully`);
+        addToHistory(`Batch file ${fileId} processed successfully`);
       } else {
-        throw new Error("Failed to classify batch file");
+        throw new Error("Failed to process batch file");
       }
     } catch (err) {
       console.error(err);
-      addToHistory(`Batch classification failed for ${fileId}`);
+      addToHistory(`Batch processing failed for ${fileId}`);
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handleUpdatePowerBI = async (fileId: string, link: string) => {
-    try {
-      const res = await fetch(`/api/batch/files/${fileId}/powerbi`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ link }),
-      });
-      if (res.ok) {
-        setBatchFiles(prev => prev.map(f => f.id === fileId ? { ...f, powerbi_link: link } : f));
-        addToHistory(`Power BI link updated for ${fileId}`);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+
 
   const handleDownloadBatch = async (fileId: string, filename: string) => {
     try {
@@ -609,6 +598,13 @@ export default function App() {
             <h2 className="text-lg font-bold text-slate-900 capitalize">{currentView}</h2>
           </div>
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => setIsLlmEnabled(!isLlmEnabled)}>
+              <Sparkles className={`w-3.5 h-3.5 ${isLlmEnabled ? 'text-indigo-600' : 'text-slate-400'}`} />
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide">AI Engine</span>
+              <div className={`w-7 h-4 rounded-full relative transition-colors ${isLlmEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+                <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-0.75 transition-all ${isLlmEnabled ? 'right-0.75' : 'left-0.75'}`} />
+              </div>
+            </div>
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-100 rounded-full text-[10px] font-bold text-green-700 uppercase tracking-wider">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
               All Systems Nominal
@@ -789,7 +785,7 @@ export default function App() {
                             <th className="px-8 py-4">File Name</th>
                             <th className="px-8 py-4">Uploaded On</th>
                             <th className="px-8 py-4 text-center">Status</th>
-                            <th className="px-8 py-4 text-center">Analytics</th>
+
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -827,20 +823,7 @@ export default function App() {
                                     </span>
                                   </div>
                                 </td>
-                                <td className="px-8 py-5">
-                                  <div className="flex justify-center">
-                                    {file.powerbi_link ? (
-                                      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border bg-yellow-50 text-yellow-700 border-yellow-200">
-                                        <Activity className="w-3 h-3" />
-                                        Linked
-                                      </span>
-                                    ) : (
-                                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border bg-slate-50 text-slate-400 border-slate-200">
-                                        Pending
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
+
                               </tr>
                             ))
                           ) : (
@@ -859,46 +842,12 @@ export default function App() {
                   {selectedFileId && (() => {
                     const file = batchFiles.find(f => f.id === selectedFileId);
                     if (!file) return null;
+                    const allSpikes = selectedFileInsights ? [
+                      ...(spikeWindowFilter === '7D' ? (selectedFileInsights.spikes_7d || []) : []),
+                      ...(spikeWindowFilter === '30D' ? (selectedFileInsights.spikes_30d || []) : [])
+                    ] : [];
                     return (
                       <div className="space-y-6">
-                        {/* Power BI linked report */}
-                        {file.powerbi_link && (
-                          <motion.div 
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8"
-                          >
-                            <div className="flex items-center justify-between mb-8">
-                              <div className="flex items-center gap-3">
-                                <div className="bg-yellow-400 p-2.5 rounded-xl shadow-lg shadow-yellow-100">
-                                  <Activity className="w-5 h-5 text-white" />
-                                </div>
-                                <div>
-                                  <h3 className="text-lg font-bold text-slate-900">Ticket Analysis</h3>
-                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Live Power BI Integration</p>
-                                </div>
-                              </div>
-                              <a 
-                                href={file.powerbi_link} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-bold text-slate-600 flex items-center gap-2 transition-all"
-                              >
-                                Open Full Report <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            </div>
-                            <div className="aspect-[16/9] w-full bg-slate-50 rounded-[2rem] border-4 border-slate-50 overflow-hidden shadow-2xl relative group">
-                              <iframe 
-                                title="Power BI Ticket Analysis"
-                                className="w-full h-full"
-                                src={file.powerbi_link}
-                                frameBorder="0" 
-                                allowFullScreen={true}
-                              ></iframe>
-                              <div className="absolute inset-0 pointer-events-none border border-black/5 rounded-[2rem]"></div>
-                            </div>
-                          </motion.div>
-                        )}
 
                         {/* Real-time AI Insights Panel */}
                         {file.status === 'Classified' && (
@@ -998,11 +947,29 @@ export default function App() {
                                   {/* Daily Incident Surges & Trends Sparkline */}
                                   {selectedFileInsights && selectedFileInsights.trends && selectedFileInsights.trends.length > 0 && (
                                     <div className="bg-slate-50/50 border border-slate-100 rounded-3xl p-6 space-y-4">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Daily Incident Surges & Trends</span>
-                                        {selectedFileInsights.spikes && selectedFileInsights.spikes.length > 0 && (
+                                      <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
+                                        <div className="flex items-center gap-4">
+                                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Daily Incident Surges & Trends</span>
+                                          <div className="bg-slate-100 p-0.5 rounded-lg flex items-center">
+                                            {['7D', '30D'].map((opt) => (
+                                              <button
+                                                key={opt}
+                                                onClick={() => setSpikeWindowFilter(opt as any)}
+                                                className={`px-2 py-0.5 text-[8px] font-black rounded-md uppercase transition-all ${
+                                                  spikeWindowFilter === opt 
+                                                    ? 'bg-white text-indigo-600 shadow-sm' 
+                                                    : 'text-slate-400 hover:text-slate-600'
+                                                }`}
+                                              >
+                                                {opt}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        
+                                        {allSpikes.length > 0 && (
                                           <span className="bg-red-50 text-red-600 px-2.5 py-1 rounded-full text-[8px] font-extrabold uppercase animate-pulse border border-red-100">
-                                            {selectedFileInsights.spikes.length} Surges Flagged
+                                            {allSpikes.length} Surges Flagged
                                           </span>
                                         )}
                                       </div>
@@ -1011,7 +978,7 @@ export default function App() {
                                           {selectedFileInsights.trends.map((t: any, idx: number) => {
                                             const maxCount = Math.max(...selectedFileInsights.trends.map((tr: any) => tr.count), 1);
                                             const heightPct = (t.count / maxCount) * 100;
-                                            const isSpike = selectedFileInsights.spikes && selectedFileInsights.spikes.some((s: any) => s.date === t.date);
+                                            const isSpike = allSpikes.some((s: any) => s.date === t.date);
                                             return (
                                               <div 
                                                 key={idx} 
@@ -1042,8 +1009,8 @@ export default function App() {
                                       {selectedTrendDate && (() => {
                                         const trendObj = selectedFileInsights.trends.find((tr: any) => tr.date === selectedTrendDate);
                                         if (!trendObj) return null;
-                                        const isSpike = selectedFileInsights.spikes && selectedFileInsights.spikes.some((s: any) => s.date === selectedTrendDate);
-                                        const spikeDetails = isSpike ? selectedFileInsights.spikes.find((s: any) => s.date === selectedTrendDate) : null;
+                                        const isSpike = allSpikes.some((s: any) => s.date === selectedTrendDate);
+                                        const spikeDetails = isSpike ? allSpikes.find((s: any) => s.date === selectedTrendDate) : null;
                                         
                                         return (
                                           <motion.div 
@@ -1080,7 +1047,7 @@ export default function App() {
                                                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Volume Threshold</span>
                                                 <span className="text-xs font-bold text-slate-600 block pt-1">
                                                   {isSpike && spikeDetails 
-                                                    ? `${spikeDetails.percentage_above_avg}% Above Average` 
+                                                    ? `${spikeDetails.percentage_above_avg}% Above ${spikeDetails.rolling_window_days}-Day Average` 
                                                     : "Within Healthy Standard Limits"}
                                                 </span>
                                               </div>
@@ -1477,7 +1444,7 @@ export default function App() {
                                   </div>
                                   
                                   <button 
-                                    onClick={() => handleClassifyBatch(file.id)}
+                                    onClick={() => handleProcessBatch(file.id)}
                                     disabled={isUploading || !columnMapping["Description"] || !columnMapping["Category"]}
                                     className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
@@ -1550,21 +1517,6 @@ export default function App() {
                               )}
                             </div>
 
-                            <div className="space-y-4 pt-6 border-t border-slate-50">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Analytics Configuration</label>
-                              <div className="relative">
-                                <input 
-                                  type="text" 
-                                  placeholder="Paste Power BI report link..."
-                                  className="w-full pl-4 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/10"
-                                  defaultValue={file.powerbi_link || ''}
-                                  onBlur={(e) => handleUpdatePowerBI(file.id, e.target.value)}
-                                />
-                                <p className="mt-1.5 text-[9px] text-slate-400 font-medium italic">
-                                  Use the link from <strong>File &gt; Embed report &gt; Website or portal</strong> to avoid connection issues.
-                                </p>
-                              </div>
-                            </div>
 
                           </>
                         );
