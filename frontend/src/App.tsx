@@ -1124,7 +1124,7 @@ export default function App() {
                                             );
                                           })
                                         ) : (
-                                          <p className="text-xs text-slate-400 italic">No routing data available</p>
+                                          <p className="text-xs text-slate-400 italic">No assignment routing available.</p>
                                         )}
                                       </div>
                                     </div>
@@ -1441,6 +1441,28 @@ export default function App() {
                                         {file.headers?.map(h => <option key={h} value={h}>{h}</option>)}
                                       </select>
                                     </div>
+                                    <div>
+                                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Priority Column</label>
+                                      <select 
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500/20"
+                                        value={columnMapping["Priority"] || ""}
+                                        onChange={(e) => setColumnMapping(prev => ({ ...prev, "Priority": e.target.value }))}
+                                      >
+                                        <option value="">-- Select Column --</option>
+                                        {file.headers?.map(h => <option key={h} value={h}>{h}</option>)}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Resolution Notes Column</label>
+                                      <select 
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500/20"
+                                        value={columnMapping["Resolution_Notes"] || ""}
+                                        onChange={(e) => setColumnMapping(prev => ({ ...prev, "Resolution_Notes": e.target.value }))}
+                                      >
+                                        <option value="">-- Select Column --</option>
+                                        {file.headers?.map(h => <option key={h} value={h}>{h}</option>)}
+                                      </select>
+                                    </div>
                                   </div>
                                   
                                   <button 
@@ -1482,6 +1504,14 @@ export default function App() {
                                         <span className="font-extrabold text-slate-400 uppercase block tracking-wider">Assignment Group</span>
                                         <span className="font-bold text-slate-700 truncate block">{file.column_mapping?.["Assignment_Group"] || "N/A"}</span>
                                       </div>
+                                      <div>
+                                        <span className="font-extrabold text-slate-400 uppercase block tracking-wider">Priority</span>
+                                        <span className="font-bold text-slate-700 truncate block">{file.column_mapping?.["Priority"] || "Auto-detected"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="font-extrabold text-slate-400 uppercase block tracking-wider">Resolution Notes</span>
+                                        <span className="font-bold text-slate-700 truncate block">{file.column_mapping?.["Resolution_Notes"] || "N/A"}</span>
+                                      </div>
                                     </div>
                                   </div>
 
@@ -1512,6 +1542,60 @@ export default function App() {
                                   >
                                     <FileSpreadsheet className="w-4 h-4" />
                                     Export SOP Documents
+                                  </button>
+
+                                  <button 
+                                    onClick={async () => {
+                                      try {
+                                        const res = await fetch(`/api/batch/files/${file.id}/kedb`);
+                                        if (res.ok) {
+                                          const blob = await res.blob();
+                                          const url = window.URL.createObjectURL(blob);
+                                          const a = document.createElement('a');
+                                          a.href = url;
+                                          a.download = `KEDB_${file.filename.split('.')[0]}.md`;
+                                          document.body.appendChild(a);
+                                          a.click();
+                                          a.remove();
+                                        } else {
+                                          alert("Failed to generate KEDB document. Please try again.");
+                                        }
+                                      } catch (err) {
+                                        console.error("KEDB generation failed", err);
+                                        alert("An error occurred during KEDB generation.");
+                                      }
+                                    }}
+                                    className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all cursor-pointer mt-3"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4" />
+                                    Export KEDB Patterns
+                                  </button>
+
+                                  <button 
+                                    onClick={async () => {
+                                      try {
+                                        const res = await fetch(`/api/batch/files/${file.id}/forecast`);
+                                        if (res.ok) {
+                                          const blob = await res.blob();
+                                          const url = window.URL.createObjectURL(blob);
+                                          const a = document.createElement('a');
+                                          a.href = url;
+                                          a.download = `FORECAST_${file.filename.split('.')[0]}.md`;
+                                          document.body.appendChild(a);
+                                          a.click();
+                                          a.remove();
+                                        } else {
+                                          alert("Failed to generate forecasting report. Please try again.");
+                                        }
+                                      } catch (err) {
+                                        console.error("Forecasting failed", err);
+                                        alert("An error occurred during forecasting generation.");
+                                      }
+                                    }}
+                                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 shadow-xl shadow-slate-200 transition-all cursor-pointer mt-3"
+                                  >
+                                    <Activity className="w-4 h-4" />
+                                    Export Forecasting Report
                                   </button>
                                 </div>
                               )}

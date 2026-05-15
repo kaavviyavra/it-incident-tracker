@@ -81,7 +81,8 @@ def run_pipeline(
         calculate_resolution_performance(
             df_filtered,
             cols.get("priority"),
-            cols.get("resolution")
+            cols.get("resolution"),
+            cols.get("date")
         )
     )
 

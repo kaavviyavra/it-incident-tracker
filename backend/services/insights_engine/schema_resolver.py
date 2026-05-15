@@ -2,59 +2,69 @@ import pandas as pd
 
 def resolve_columns(df: pd.DataFrame, mapping: dict = None) -> dict:
     """
-    Dynamically scans DataFrame headers against known naming conventions and 
-    custom mappings to normalize metric collection points.
+    Resolves DataFrame headers, ensuring user manual mappings from UI ALWAYS take precedence,
+    followed by strict checks on enterprise naming standards, and finally fuzzy fallbacks.
     """
     mapping = mapping or {}
     resolved = {}
 
-    # Category Mapping
-    cat_col = next((c for c in ["Category", "AI_Category", "category"] if c in df.columns), None)
-    if not cat_col:
-        mapped_cat = mapping.get("Category")
-        if mapped_cat in df.columns:
-            cat_col = mapped_cat
-        else:
+    # 1. Category Mapping
+    cat_col = mapping.get("Category")
+    if not cat_col or cat_col not in df.columns:
+        cat_col = next((c for c in ["Category", "AI_Category", "category", "Ticket Category", "Classification"] if c in df.columns), None)
+        if not cat_col:
             cat_col = next((c for c in df.columns if "cat" in str(c).lower() or "type" in str(c).lower()), None)
     resolved["category"] = cat_col
 
-    # Description Mapping
-    desc_col = next((c for c in ["Description", "description", "Short_Description"] if c in df.columns), None)
-    if not desc_col:
-        mapped_desc = mapping.get("Description")
-        if mapped_desc in df.columns:
-            desc_col = mapped_desc
-        else:
+    # 2. Description Mapping
+    desc_col = mapping.get("Description")
+    if not desc_col or desc_col not in df.columns:
+        desc_col = next((c for c in ["Description", "description", "Short_Description", "Short Description", "summary", "Summary"] if c in df.columns), None)
+        if not desc_col:
             desc_col = next((c for c in df.columns if "desc" in str(c).lower() or "short" in str(c).lower() or "subject" in str(c).lower()), None)
     resolved["description"] = desc_col
 
-    # Subcategory Mapping
-    sub_col = next((c for c in ["Subcategory", "AI_Subcategory", "subcategory"] if c in df.columns), None)
-    if not sub_col:
-        mapped_sub = mapping.get("Subcategory")
-        if mapped_sub in df.columns:
-            sub_col = mapped_sub
+    # 3. Subcategory Mapping
+    sub_col = mapping.get("Subcategory")
+    if not sub_col or sub_col not in df.columns:
+        sub_col = next((c for c in ["Subcategory", "AI_Subcategory", "subcategory", "Sub-category"] if c in df.columns), None)
+        if not sub_col:
+             sub_col = next((c for c in df.columns if "sub" in str(c).lower() and "cat" in str(c).lower()), None)
     resolved["subcategory"] = sub_col
 
-    # Assignment Group Mapping
-    grp_col = next((c for c in ["Assignment_Group", "Assignment Group", "assignment_group"] if c in df.columns), None)
-    if not grp_col:
-        mapped_grp = mapping.get("Assignment_Group")
-        if mapped_grp in df.columns:
-            grp_col = mapped_grp
+    # 4. Assignment Group Mapping
+    grp_col = mapping.get("Assignment_Group")
+    if not grp_col or grp_col not in df.columns:
+        grp_col = next((c for c in ["Assignment_Group", "Assignment Group", "assignment_group", "group", "Group", "Assigned Group"] if c in df.columns), None)
+        if not grp_col:
+            grp_col = next((c for c in df.columns if "assign" in str(c).lower() and "group" in str(c).lower()), None)
     resolved["assignment_group"] = grp_col
 
-    # Base system columns
-    resolved["priority"] = next((c for c in ["Priority", "priority", "AI_Priority"] if c in df.columns), None)
+    # 5. Priority Mapping (With additional auto-synonyms like Severity, Urgency)
+    prio_col = mapping.get("Priority")
+    if not prio_col or prio_col not in df.columns:
+        prio_col = next((c for c in ["Priority", "priority", "AI_Priority", "Urgency", "urgency", "Severity", "severity"] if c in df.columns), None)
+        if not prio_col:
+            prio_col = next((c for c in df.columns if "prio" in str(c).lower() or "urg" in str(c).lower() or "sev" in str(c).lower() or "criticality" in str(c).lower()), None)
+    resolved["priority"] = prio_col
+
+    # 6. Resolution Notes Mapping
+    res_notes_col = mapping.get("Resolution_Notes")
+    if not res_notes_col or res_notes_col not in df.columns:
+        res_notes_col = next((c for c in ["Resolution_Notes", "resolution_notes", "Resolution Notes", "close_notes", "Resolution_Summary", "Resolution Summary", "Fix", "Notes"] if c in df.columns), None)
+        if not res_notes_col:
+            res_notes_col = next((c for c in df.columns if "resol" in str(c).lower() or "close" in str(c).lower() or "fix" in str(c).lower()), None)
+    resolved["resolution_notes"] = res_notes_col
     
-    # Date resolution logic excluding upload timestamps
+    # 7. Date resolution (intelligent sorting to ignore technical system timestamps)
     date_col = next((c for c in df.columns if any(sub in str(c).lower() for sub in ["created", "opened", "incident_date", "incident date", "timestamp", "date"]) and str(c) != "Processed_At"), None)
     if not date_col:
         date_col = next((c for c in ["Created", "Created_At", "Opened", "Opened_At", "date", "createdAt"] if c in df.columns), None) or next((c for c in ["Processed_At"] if c in df.columns), None)
     resolved["date"] = date_col
 
-    resolved["resolution"] = next((c for c in ["Resolution_Time", "duration", "resolve_time", "resolution_time"] if c in df.columns), None)
-    resolved["sla_breach"] = next((c for c in ["SLA_Breached", "sla_breached", "breached", "SLA"] if c in df.columns), None)
-    resolved["reopen"] = next((c for c in ["Reopen_Count", "reopen_count", "reopened", "reopens"] if c in df.columns), None)
+    # 8. Technical Performance Metrics
+    resolved["resolution"] = next((c for c in ["Resolution_Time", "duration", "resolve_time", "resolution_time", "Hours", "hours", "resolve_duration"] if c in df.columns), None) or next((c for c in df.columns if "durat" in str(c).lower() or "resol" in str(c).lower() and "time" in str(c).lower()), None)
+    resolved["sla_breach"] = next((c for c in ["SLA_Breached", "sla_breached", "breached", "SLA"] if c in df.columns), None) or next((c for c in df.columns if "sla" in str(c).lower() and "breach" in str(c).lower()), None)
+    resolved["reopen"] = next((c for c in ["Reopen_Count", "reopen_count", "reopened", "reopens"] if c in df.columns), None) or next((c for c in df.columns if "reopen" in str(c).lower()), None)
 
     return resolved
