@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, send_file
 from werkzeug.utils import secure_filename
 from services.dataset_loader import get_dataset_for_file
 from services.ai import run_llm_with_prompt_cache
+from services.local_ai import get_diverse_samples
 
 sop_bp = Blueprint("sop", __name__)
 
@@ -57,7 +58,8 @@ def generate_sop_endpoint(file_id):
             
         res_list = []
         if res_col:
-            res_list = df[df[cat_col] == cat].dropna(subset=[res_col])[res_col].head(5).astype(str).tolist()
+            raw_notes = df[df[cat_col] == cat].dropna(subset=[res_col])[res_col].astype(str).tolist()
+            res_list = get_diverse_samples(raw_notes, count=5)
             
         sop_data[cat] = {
             "issue_description": desc_sample,
@@ -176,7 +178,8 @@ def generate_kedb_endpoint(file_id):
             
         res_list = []
         if res_col:
-            res_list = df[df[cat_col] == cat].dropna(subset=[res_col])[res_col].head(5).astype(str).tolist()
+            raw_notes = df[df[cat_col] == cat].dropna(subset=[res_col])[res_col].astype(str).tolist()
+            res_list = get_diverse_samples(raw_notes, count=5)
             
         kedb_data[cat] = {
             "symptoms": desc_sample,

@@ -51,6 +51,45 @@ def process_batch_file(file_content, filename, mapping=None):
     df["Processing_Status"] = "SUCCESS"
 
     # -----------------------------
+    # Apply AI Defaults for Missing Core Fields
+    # -----------------------------
+    try:
+        from services.local_ai.semantic_similarity import classify_texts_zero_shot
+        
+        # Locate description column safely
+        desc_col = next((c for c in ["Description", "description", "Short_Description", "Short Description", "Short description"] if c in df.columns), None)
+        if not desc_col:
+            desc_col = next((c for c in df.columns if "desc" in str(c).lower() or "short" in str(c).lower()), None)
+            
+        if desc_col and len(df) > 0:
+            # We process unique descriptions only to save massive amounts of time (runs in seconds)
+            unique_descs = df[desc_col].astype(str).unique().tolist()
+            
+            # Predict AI_Category if no known category maps exist
+            if not any(c in df.columns for c in ["Category", "category", "Company", "Request For", "Account/Department"]):
+                generic_categories = ["Network & Connectivity", "Hardware & Equipment", "Software Application", "Database & Data", "Access & Identity", "General Service Request"]
+                predictions = classify_texts_zero_shot(unique_descs, generic_categories)
+                desc_to_cat = dict(zip(unique_descs, predictions))
+                df["AI_Category"] = df[desc_col].astype(str).map(desc_to_cat)
+
+            # Predict AI_Priority if no known priority/state maps exist
+            if not any(c in df.columns for c in ["Priority", "priority", "State", "severity", "urgency"]):
+                generic_priorities = ["1 - Critical", "2 - High", "3 - Medium", "4 - Low"]
+                label_context = [
+                    "Critical System Failure or Outage affecting many", 
+                    "High Priority Issue", 
+                    "Medium Priority standard operational issue", 
+                    "Low Priority minor request or question"
+                ]
+                predictions_context = classify_texts_zero_shot(unique_descs, label_context)
+                
+                context_to_prio = dict(zip(label_context, generic_priorities))
+                desc_to_prio = {desc: context_to_prio[pred] for desc, pred in zip(unique_descs, predictions_context)}
+                df["AI_Priority"] = df[desc_col].astype(str).map(desc_to_prio)
+    except Exception as e:
+        print(f"Skipped local AI column auto-generation: {e}")
+
+    # -----------------------------
     # Basic Cleanup
     # -----------------------------
     df = df.astype(object).fillna("")
