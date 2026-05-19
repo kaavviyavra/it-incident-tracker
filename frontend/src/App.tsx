@@ -1205,6 +1205,41 @@ export default function App() {
                                         </div>
                                       </div>
                                     )}
+
+                                    {/* Status Distribution */}
+                                    {selectedFileInsights && selectedFileInsights.status_distribution && Object.keys(selectedFileInsights.status_distribution).length > 0 && (
+                                      <div className="pt-6 border-t border-slate-100 space-y-4">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                          <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                                          Status vs Count
+                                        </h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          {Object.entries(selectedFileInsights.status_distribution).map(([status, count]: [string, any]) => {
+                                            const pct = selectedFileInsights.total_tickets > 0 
+                                              ? (count / selectedFileInsights.total_tickets) * 100 
+                                              : 0;
+                                            
+                                            let barColor = "bg-indigo-600";
+                                            if (status.toLowerCase().includes("open") || status.toLowerCase().includes("new")) barColor = "bg-red-500";
+                                            else if (status.toLowerCase().includes("assign") || status.toLowerCase().includes("progress")) barColor = "bg-blue-500";
+                                            else if (status.toLowerCase().includes("resolv") || status.toLowerCase().includes("close") || status.toLowerCase().includes("complete")) barColor = "bg-green-500";
+                                            else if (status.toLowerCase().includes("hold") || status.toLowerCase().includes("pending")) barColor = "bg-amber-500";
+
+                                            return (
+                                              <div key={status} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col justify-between">
+                                                <div className="flex justify-between text-xs font-bold text-slate-700 mb-2">
+                                                  <span>{status}</span>
+                                                  <span className="text-slate-400">{count} ({pct.toFixed(0)}%)</span>
+                                                </div>
+                                                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                                  <div className={`${barColor} h-full rounded-full transition-all duration-500`} style={{ width: `${pct}%` }}></div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                               ) : (
                                 <div className="flex flex-col items-center justify-center py-12 text-center text-slate-400 italic">
@@ -1453,6 +1488,17 @@ export default function App() {
                                       </select>
                                     </div>
                                     <div>
+                                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Status Column</label>
+                                      <select 
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500/20"
+                                        value={columnMapping["Status"] || ""}
+                                        onChange={(e) => setColumnMapping(prev => ({ ...prev, "Status": e.target.value }))}
+                                      >
+                                        <option value="">-- Select Column --</option>
+                                        {file.headers?.map(h => <option key={h} value={h}>{h}</option>)}
+                                      </select>
+                                    </div>
+                                    <div>
                                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Resolution Notes Column</label>
                                       <select 
                                         className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-indigo-500/20"
@@ -1507,6 +1553,10 @@ export default function App() {
                                       <div>
                                         <span className="font-extrabold text-slate-400 uppercase block tracking-wider">Priority</span>
                                         <span className="font-bold text-slate-700 truncate block">{file.column_mapping?.["Priority"] || "Auto-detected"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="font-extrabold text-slate-400 uppercase block tracking-wider">Status</span>
+                                        <span className="font-bold text-slate-700 truncate block">{file.column_mapping?.["Status"] || "Auto-detected"}</span>
                                       </div>
                                       <div>
                                         <span className="font-extrabold text-slate-400 uppercase block tracking-wider">Resolution Notes</span>

@@ -55,6 +55,7 @@ def run_pipeline(
         "subcategories": {},
         "assignment_groups": {},
         "priority_distribution": {},
+        "status_distribution": {},
         "priority_vs_resolution_time": {},
 
         "trends": [],

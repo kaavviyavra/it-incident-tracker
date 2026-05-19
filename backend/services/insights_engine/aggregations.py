@@ -1,12 +1,13 @@
 import pandas as pd
 
 def calculate_distributions(df: pd.DataFrame, cols: dict) -> dict:
-    """Compiles basic counts across categories, subcategories, groups and priorities."""
+    """Compiles basic counts across categories, subcategories, groups, priorities and status."""
     dist = {
         "categories": {},
         "subcategories": {},
         "assignment_groups": {},
-        "priority_distribution": {}
+        "priority_distribution": {},
+        "status_distribution": {}
     }
     
     if len(df) == 0:
@@ -16,7 +17,8 @@ def calculate_distributions(df: pd.DataFrame, cols: dict) -> dict:
         "categories": cols.get("category"),
         "subcategories": cols.get("subcategory"),
         "assignment_groups": cols.get("assignment_group"),
-        "priority_distribution": cols.get("priority")
+        "priority_distribution": cols.get("priority"),
+        "status_distribution": cols.get("status")
     }
     
     for key, target_col in mapping.items():

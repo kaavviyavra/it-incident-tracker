@@ -33,7 +33,8 @@ def truncate_insights(insights: dict) -> dict:
         "categories",
         "subcategories",
         "assignment_groups",
-        "priority_distribution"
+        "priority_distribution",
+        "status_distribution"
     ]:
         if key in truncated and isinstance(truncated[key], dict):
             items = list(truncated[key].items())[:MAX_ITEMS_PER_SECTION]

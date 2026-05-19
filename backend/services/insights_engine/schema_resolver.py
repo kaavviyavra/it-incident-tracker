@@ -68,4 +68,12 @@ def resolve_columns(df: pd.DataFrame, mapping: dict = None) -> dict:
     resolved["sla_breach"] = next((c for c in ["SLA_Breached", "sla_breached", "breached", "SLA"] if c in df.columns), None) or next((c for c in df.columns if "sla" in str(c).lower() and "breach" in str(c).lower()), None)
     resolved["reopen"] = next((c for c in ["Reopen_Count", "reopen_count", "reopened", "reopens"] if c in df.columns), None) or next((c for c in df.columns if "reopen" in str(c).lower()), None)
 
+    # 9. Status Mapping
+    status_col = mapping.get("Status")
+    if not status_col or status_col not in df.columns:
+        status_col = next((c for c in ["Status", "status", "State", "state", "Incident_State", "Incident State", "Phase", "phase"] if c in df.columns), None)
+        if not status_col:
+            status_col = next((c for c in df.columns if "stat" in str(c).lower() or "state" in str(c).lower() or "phase" in str(c).lower()), None)
+    resolved["status"] = status_col
+
     return resolved
