@@ -83,12 +83,3 @@ it-incident-tracker/
    npm run dev
    ```
    *The frontend dashboard will be available at `http://localhost:3000`.*
-
----
-
-## 🛡️ Recent System Enhancements
-
-- **Flexible Status Column Mapping**: Users can now select and map their custom "Status" columns when uploading incident dumps, with intelligent auto-detection rules serving as a fallback.
-- **Status vs Count Dashboard Graphs**: Interactive visual distributions display current status percentages styled in modern, dynamic color tokens.
-- **Simplified Layout Controls**: Removed extraneous settings, search bars, notifications, and integration controls from the main header and sidebars to focus fully on incident management, batch intelligence, and document exporting.
-- **Help Centre**: Integrated a Help Centre navigation panel for quickly viewing user manual documentation directly inside the dashboard.
